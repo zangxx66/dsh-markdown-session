@@ -67,7 +67,7 @@ marked.parse(text, { gfm: true })  →  DOMPurify.sanitize(html, 白名单)  →
 - **只有存在可见内容才出气泡**：`root div:has(> body > *:not([hidden]):not(:empty))`（含可见 reasoning / 过程包装），并排除 `data-chat-group-part="reasoning"` 分区行。折叠思考、空 body（仅 tool-call）的 step 只有透明的恒定几何、没有可见气泡；流式期间一旦有正文或可见 reasoning 立即显形。
 - 不设 `transform`、不给气泡根设 `overflow:hidden`，避免破坏 sticky 代码 banner；`.body` 的 16px gap 与折叠隐藏行为保持不变。
 - 颜色取 `--dsw-alias-markdown-code-block`、`--dsw-alias-label-primary` 等主题变量，浅/深色自动适配。
-- 表格统一边框 + 斑马纹（用户侧、内嵌 HTML、助手原生表格）。
+- 表格统一边框 + 斑马纹（用户侧、内嵌 HTML、助手原生表格）；助手表格的边框/内边距**不依赖 settled 标记**，流式期已是真实 `<table>` 就先应用，落定瞬间不再整表增高。
 - 宽表 `.md-table-wide` 的「破栏负 margin」在气泡内改为**气泡内横向滚动**（`overflow-x:auto`），不撑破页面宽度。
 
 ### XSS 白名单

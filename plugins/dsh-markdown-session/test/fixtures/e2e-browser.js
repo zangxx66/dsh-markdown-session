@@ -532,6 +532,10 @@
       markdown: '流式 **生成中**',
       literalHtml: '流式字面 <b>暂不处理</b>',
     })
+    var streamingTable = el('div')
+    streamingTable.innerHTML = '<table><thead><tr><th>流式列</th></tr></thead>'
+      + '<tbody><tr><td>值</td></tr></tbody></table>'
+    streaming.markdown.appendChild(streamingTable)
 
     var reasoningHiddenRow = buildAssistantRow({ reasoningOnly: true, hidden: true })
     var reasoningVisibleRow = buildAssistantRow({ reasoningOnly: true })
@@ -737,6 +741,20 @@
       assertEqual(style.overflowX, 'auto', '宽表未横向滚动')
       assert(wrapper.scrollWidth > wrapper.clientWidth, '宽表未产生内部滚动：' + wrapper.scrollWidth + '/' + wrapper.clientWidth)
       assert(document.documentElement.scrollWidth <= window.innerWidth + 1, '页面被宽表撑破：' + document.documentElement.scrollWidth + ' > ' + window.innerWidth)
+    })
+
+    await check('表格/流式与落定表格几何一致（落定瞬间不整表增高）', function () {
+      var streamCell = streaming.markdown.querySelector('th')
+      var settledCell = settled.markdown.querySelector('th')
+      assert(streamCell !== null, '流式表格缺少单元格')
+      assert(settledCell !== null, '落定表格缺少单元格')
+      var streamStyle = window.getComputedStyle(streamCell)
+      var settledStyle = window.getComputedStyle(settledCell)
+      assertEqual(streamStyle.paddingTop, '8px', '流式表格未应用气泡内边距')
+      assertEqual(streamStyle.paddingLeft, '12px', '流式表格未应用气泡内边距')
+      assertEqual(streamStyle.padding, settledStyle.padding, '流式/落定表格内边距不一致（落定会突变）')
+      assertEqual(streamStyle.borderTopWidth, '1px', '流式表格无边框')
+      assertEqual(streamStyle.borderTopWidth, settledStyle.borderTopWidth, '流式/落定表格边框不一致')
     })
 
     await check('行容器/不注入无效布局属性（用户右/助手左由上游自身提供）', function () {

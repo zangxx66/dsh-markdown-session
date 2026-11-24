@@ -388,8 +388,9 @@ test('气泡锚点是消息节点根：流式与历史 step 都有外壳，且�
   // 行容器不是 flex 容器：不得对 [data-chat-flow-kind] 注入布局属性。
   assert.equal(css.includes('justify-content'), false, '不得向行容器注入 justify-content')
   assert.equal(/\[data-chat-flow-kind="(user|assistant-step)"\]\{/.test(css), false, '不得直接改行容器布局')
-  // 后处理/表格美化仍按 settled 属性（正确，保持）。
-  assert.ok(css.includes('[data-chat-flow-kind="assistant-step"] [data-text-interaction-source]'))
+  // 后处理仍只看 settled（[data-text-interaction-source]）；表格美化不依赖内容状态，避免落定期行高突变。
+  assert.equal(session.ASSISTANT_ROOT_SELECTOR, '[data-chat-flow-kind="assistant-step"] [data-text-interaction-source]', '后处理选择器必须只看 settled')
+  assert.equal(/\[data-text-interaction-source\][^{]*\btable\b/.test(css), false, '表格美化不得依赖 settled（落定会整表增高的突变源）')
 })
 
 test('样式不含 transform / 不针对工具卡与思考块，避免破坏 sticky banner 与既有 UI', () => {

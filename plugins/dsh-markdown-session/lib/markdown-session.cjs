@@ -872,11 +872,14 @@
     'html[' + ROOT_ATTR + '="on"] :is([data-dsh-md="user"],[' + MARK_ATTR + ']) th{background:var(--dsw-alias-interactive-bg-hover);font-weight:600}',
     'html[' + ROOT_ATTR + '="on"] :is([data-dsh-md="user"],[' + MARK_ATTR + ']) tbody tr:nth-child(even){background:var(--dsw-alias-interactive-bg-hover)}',
     'html[' + ROOT_ATTR + '="on"] :is([data-dsh-md="user"],[' + MARK_ATTR + ']) caption{caption-side:bottom;padding-top:4px;color:var(--dsw-alias-label-tertiary);font-size:.9em}',
-    /* ---- 助手原生 Markdown 表格：气泡内也做边框 + 斑马纹（判据 9） ---- */
-    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"] [data-text-interaction-source] table{border-collapse:collapse}',
-    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"] [data-text-interaction-source] :is(th,td){border:1px solid var(--dsw-alias-border-l2);padding:8px 12px}',
-    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"] [data-text-interaction-source] th{background:var(--dsw-alias-interactive-bg-hover);font-weight:600}',
-    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"] [data-text-interaction-source] tbody tr:nth-child(even){background:var(--dsw-alias-interactive-bg-hover)}',
+    /* ---- 助手原生 Markdown 表格：气泡内也做边框 + 斑马纹（判据 9）。
+       选择器不依赖 settled 标记：原生表格在流式期已是真实 <table>，若边框/内边距只在落定
+       瞬间追加，落定那一刻行高会整表突增（多行表格可达上百 px），同样是「内容状态驱动的
+       行高突变」，会让上游 keepAboveClosing / scroll anchoring 的补偿路径偏掉。 ---- */
+    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"]:not([data-chat-group-part="reasoning"]) > [data-slot="conversation.chat.node"] > div table{border-collapse:collapse}',
+    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"]:not([data-chat-group-part="reasoning"]) > [data-slot="conversation.chat.node"] > div :is(th,td){border:1px solid var(--dsw-alias-border-l2);padding:8px 12px}',
+    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"]:not([data-chat-group-part="reasoning"]) > [data-slot="conversation.chat.node"] > div th{background:var(--dsw-alias-interactive-bg-hover);font-weight:600}',
+    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"]:not([data-chat-group-part="reasoning"]) > [data-slot="conversation.chat.node"] > div tbody tr:nth-child(even){background:var(--dsw-alias-interactive-bg-hover)}',
     /* ---- 白名单内嵌 HTML 的外观 ---- */
     'html[' + ROOT_ATTR + '="on"] [' + MARK_ATTR + ']:is(div,details,table,ul,ol,dl,blockquote,pre,hr,figure){margin:8px 0}',
     'html[' + ROOT_ATTR + '="on"] [' + MARK_ATTR + '] :is(details,summary){margin:0}',
