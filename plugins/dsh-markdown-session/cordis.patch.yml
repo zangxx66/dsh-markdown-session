@@ -1,0 +1,5 @@
+# dsh-markdown-session bundle patch：把本包的 dsh.client 入口插进 Web 插件名册。
+# 前端能力全在 client.js；宿主半区是空 apply，只为让 loader 有一个合法插件条目。
+- insert:
+    - id: dsh-markdown-session
+      name: 'dsh-markdown-session'

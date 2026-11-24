@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>dsh-markdown-session 视觉 fixture</title>
+<style>
+  /* 近似复刻 DSH 主题变量（取自 ui-theme design-platform.css）；
+     视觉证据用于展示布局/气泡/表格/代码，不代表真机像素级一致。 */
+  :root {
+    --dsh-chat-content-width: 748px;
+    --dsh-content-font-size: 14px;
+    --dsh-content-font-delta: 0px;
+    --dsw-radius-xl: 20px;
+    --dsw-radius-md: 8px;
+    --dsw-radius-sm: 4px;
+    --ds-font-family-code: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --dsw-alias-bg-base: rgb(255, 255, 255);
+    --dsw-alias-label-primary: rgb(15, 17, 21);
+    --dsw-alias-label-secondary: rgb(97, 102, 107);
+    --dsw-alias-label-tertiary: rgb(129, 133, 140);
+    --dsw-alias-link: rgb(65, 118, 230);
+    --dsw-alias-markdown-code-block: rgb(249, 250, 251);
+    --dsw-alias-markdown-inline-code: rgb(250, 250, 250);
+    --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
+    --dsw-alias-border-l2: rgba(0, 0, 0, 0.1);
+    --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.06);
+    --dsw-alias-state-business-primary: rgb(65, 118, 230);
+    --dsw-alias-state-warn-primary: rgb(245, 158, 11);
+    --dsw-specific-bubble: rgb(237, 243, 254);
+  }
+  body[data-ds-dark-theme] {
+    --dsw-alias-bg-base: rgb(21, 21, 23);
+    --dsw-alias-label-primary: rgb(249, 250, 251);
+    --dsw-alias-label-secondary: rgb(207, 211, 214);
+    --dsw-alias-label-tertiary: rgb(173, 178, 184);
+    --dsw-alias-link: rgb(122, 170, 255);
+    --dsw-alias-markdown-code-block: rgb(27, 27, 28);
+    --dsw-alias-markdown-inline-code: rgb(41, 41, 41);
+    --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
+    --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
+    --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+    --dsw-specific-bubble: rgb(44, 44, 46);
+  }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--dsw-alias-bg-base);
+    color: var(--dsw-alias-label-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: var(--dsh-content-font-size);
+    line-height: 22px;
+    padding: 20px 0 48px;
+  }
+  .page { max-width: 748px; margin: 0 auto; padding: 0 16px; }
+  .fixture-note {
+    margin: 0 0 18px;
+    padding: 8px 12px;
+    border: 1px dashed var(--dsw-alias-border-l2);
+    border-radius: var(--dsw-radius-md);
+    color: var(--dsw-alias-label-secondary);
+    font-size: 12px;
+  }
+  .fixture-note b { color: var(--dsw-alias-label-primary); }
+  .flow-row { margin: 12px 0; }
+  [data-chat-flow-kind="user"] { display: flex; justify-content: flex-start; }
+  [data-chat-flow-kind="user"] > div { display: flex; flex-direction: column; align-items: flex-end; max-width: min(calc(var(--dsh-chat-content-width) * 0.702), 82%); }
+  [data-message-bubble] {
+    background: var(--dsw-specific-bubble);
+    border-radius: var(--dsw-radius-xl);
+    max-width: 100%;
+    padding: 10px 16px;
+    color: var(--dsw-alias-label-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  [data-chat-flow-kind="assistant-step"] { display: flex; flex-direction: column; }
+  /* 原生 markdown 根的近似（真实实现由 ui-primitives 自带 hash 类名样式）。 */
+  .markdown { overflow-wrap: anywhere; min-width: 0; color: var(--dsw-alias-label-primary); }
+  .markdown p { margin: 10px 0; }
+  .markdown :first-child { margin-top: 0 !important; }
+  .markdown :last-child { margin-bottom: 0 !important; }
+  .markdown table { border-collapse: collapse; }
+  .markdown .md-table-wide { max-width: 100%; overflow-x: auto; }
+  .markdown .md-table-wide table { width: max-content; max-width: max-content; }
+  .markdown .md-table-wide th, .markdown .md-table-wide td { min-width: 120px; border: 1px solid var(--dsw-alias-border-l2); padding: 6px 10px; }
+  .fake-tool-card {
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md);
+    padding: 8px 12px; background: var(--dsw-alias-bg-base);
+  }
+  .fake-tool-card button {
+    margin-left: auto; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px;
+    background: var(--dsw-alias-markdown-code-block); color: inherit; padding: 2px 8px; cursor: pointer;
+  }
+  .fake-think {
+    border-left: 2px solid var(--dsw-alias-border-l2);
+    padding: 2px 0 2px 10px; margin: 8px 0; color: var(--dsw-alias-label-secondary);
+    font-size: 13px;
+  }
+  .section-label { margin: 18px 0 4px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+</style>
+</head>
+<body>
+<main class="page">
+  <p class="fixture-note"><b>dsh-markdown-session 视觉 fixture</b>：主题变量取自 DSH ui-theme 的近似值，用于展示用户/助手气泡、GFM 表格、代码块与内嵌 HTML；非真机截图。</p>
+  <div class="section-label">用户消息（右对齐气泡 · 发送侧 Markdown）</div>
+  <div id="stage"></div>
+</main>
+<script>
+  window.__ModuleLoader__ = { load(registration) { window.__registration = registration } }
+</script>
+<script src="../../client.js"></script>
+<script>
+  (function () {
+    'use strict'
+    var params = new URLSearchParams(location.search)
+    if (params.get('theme') === 'dark') document.body.setAttribute('data-ds-dark-theme', '')
+
+    var fakeReact = {
+      createElement: function (type, props) { return { type: type, props: props || {} } },
+      useMemo: function (factory) { return factory() },
+      useRef: function (value) { return { current: value } },
+      useState: function (value) { return [value, function () {}] },
+      useEffect: function () {},
+    }
+    var plugin = window.__registration.factory(function (specifier) {
+      if (specifier === 'react') return fakeReact
+      throw new Error('未声明的 require: ' + specifier)
+    })
+    var api = plugin.__test
+    var disposers = []
+    plugin.apply({
+      slots: {
+        inject: function (name, callback) { var d = callback(); disposers.push(d); return d },
+        register: function () { return function () {} },
+      },
+      effect: function (callback) { var d = callback(); disposers.push(d); return d },
+      get: function () { return undefined },
+    })
+
+    var stage = document.getElementById('stage')
+
+    function userRow(markdown) {
+      var flow = document.createElement('div')
+      flow.setAttribute('data-chat-flow-kind', 'user')
+      flow.className = 'flow-row'
+      var column = document.createElement('div')
+      var bubble = document.createElement('div')
+      bubble.setAttribute('data-message-bubble', '')
+      var body = document.createElement('div')
+      body.setAttribute('data-dsh-md', 'user')
+      body.className = 'dsh-md-user'
+      body.innerHTML = api.renderUserMarkdown(markdown)
+      api.decorateUserTables(body, { table: 'Markdown 表格' })
+      bubble.appendChild(body)
+      column.appendChild(bubble)
+      flow.appendChild(column)
+      return flow
+    }
+
+    function assistantRow(markdown, literalHtml) {
+      var flow = document.createElement('div')
+      flow.setAttribute('data-chat-flow-kind', 'assistant-step')
+      flow.className = 'flow-row'
+      var body = document.createElement('div')
+      body.setAttribute('data-text-interaction-source', '')
+      body.innerHTML = api.renderUserMarkdown(markdown)
+      if (literalHtml) {
+        var paragraph = document.createElement('p')
+        paragraph.textContent = literalHtml
+        body.appendChild(paragraph)
+      }
+      flow.appendChild(body)
+      return { flow: flow, body: body }
+    }
+
+    stage.appendChild(userRow([
+      '### 用户发送的消息',
+      '',
+      '现在支持 **加粗**、*斜体*、~~删除线~~、`行内代码` 与 [链接](https://example.com)。',
+      '',
+      '- 列表项一',
+      '- 列表项二',
+      '',
+      '```bash',
+      'npm run check && npm test',
+      '```',
+    ].join('\n')))
+
+    var wideTable = [
+      '| 目标 | 判据 | 状态 | 风险 | 备注 |',
+      '| --- | --- | --- | --- | --- |',
+      '| g-001 | 用户消息 GFM | 通过 | 低 | 自动化断言 |',
+      '| g-001 | 助手 HTML 白名单 | 通过 | 中 | DOMPurify |',
+      '| g-001 | XSS 防护 | 通过 | 低 | 32 payload |',
+    ].join('\n')
+
+    var assistant = assistantRow([
+      '### 助手回复（接收侧保留原生渲染）',
+      '',
+      '原生 GFM、表格、KaTeX 与 Shiki 不动；这里只把「显示为字面文本的 HTML」替换成真实元素：',
+      '',
+      wideTable,
+      '',
+      '```javascript',
+      'const safe = DOMPurify.sanitize(html, ALLOWLIST)',
+      '```',
+    ].join('\n'), '内嵌 HTML：<details open><summary>展开查看</summary><b>加粗</b>、<kbd>Ctrl</kbd>+<kbd>C</kbd>、<mark>高亮</mark> 都会渲染为真实元素。</details>')
+    stage.appendChild(assistant.flow)
+    api.createPatcher({}).scan(assistant.body)
+
+    var toolFlow = document.createElement('div')
+    toolFlow.setAttribute('data-chat-flow-kind', 'tool-call')
+    toolFlow.className = 'flow-row'
+    toolFlow.innerHTML = '<div class="fake-tool-card"><span>工具调用卡片（不应被插件改动）</span><button type="button">复制</button></div>'
+    stage.appendChild(toolFlow)
+
+    var think = document.createElement('div')
+    think.className = 'flow-row fake-think'
+    think.setAttribute('data-variant', 'think')
+    think.textContent = '思考块：插件跳过 [data-variant="think"]，其中 HTML 不解析。'
+    stage.appendChild(think)
+  }())
+</script>
+</body>
+</html>

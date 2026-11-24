@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>dsh-markdown-session E2E harness</title>
+<style>
+  /* 只复刻被断言的主题变量（值取自 DSH ui-theme design-platform.css），
+     让气泡背景/文字对比度在真实 DOM 里可计算。不是主题文件的替代品。 */
+  :root {
+    --dsh-chat-content-width: 748px;
+    --dsh-content-font-size: 14px;
+    --dsh-content-font-delta: 0px;
+    --dsw-radius-xl: 20px;
+    --dsw-radius-md: 8px;
+    --dsw-radius-sm: 4px;
+    --ds-font-family-code: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --dsw-alias-bg-base: rgb(255, 255, 255);
+    --dsw-alias-label-primary: rgb(15, 17, 21);
+    --dsw-alias-label-secondary: rgb(97, 102, 107);
+    --dsw-alias-label-tertiary: rgb(129, 133, 140);
+    --dsw-alias-link: rgb(65, 118, 230);
+    --dsw-alias-markdown-code-block: rgb(249, 250, 251);
+    --dsw-alias-markdown-inline-code: rgb(250, 250, 250);
+    --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
+    --dsw-alias-border-l2: rgba(0, 0, 0, 0.1);
+    --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.06);
+    --dsw-alias-state-business-primary: rgb(65, 118, 230);
+    --dsw-alias-state-warn-primary: rgb(245, 158, 11);
+    --dsw-specific-bubble: rgb(237, 243, 254);
+  }
+  body[data-ds-dark-theme] {
+    --dsw-alias-bg-base: rgb(21, 21, 23);
+    --dsw-alias-label-primary: rgb(249, 250, 251);
+    --dsw-alias-label-secondary: rgb(207, 211, 214);
+    --dsw-alias-label-tertiary: rgb(173, 178, 184);
+    --dsw-alias-link: rgb(122, 170, 255);
+    --dsw-alias-markdown-code-block: rgb(27, 27, 28);
+    --dsw-alias-markdown-inline-code: rgb(41, 41, 41);
+    --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
+    --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
+    --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+    --dsw-specific-bubble: rgb(44, 44, 46);
+  }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--dsw-alias-bg-base);
+    color: var(--dsw-alias-label-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: var(--dsh-content-font-size);
+    line-height: 22px;
+  }
+  .flow { max-width: 748px; margin: 0 auto; padding: 16px; }
+  /* 复刻上游 user 行与气泡的最小语义结构（hash 类名不可依赖）。 */
+  [data-chat-flow-kind="user"] { display: flex; justify-content: flex-start; margin: 10px 0; }
+  [data-chat-flow-kind="user"] > div { display: flex; flex-direction: column; align-items: flex-end; max-width: 82%; }
+  [data-message-bubble] {
+    background: var(--dsw-specific-bubble);
+    border-radius: var(--dsw-radius-xl);
+    max-width: 100%;
+    padding: 10px 16px;
+    color: var(--dsw-alias-label-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  [data-chat-flow-kind="assistant-step"] { display: flex; flex-direction: column; margin: 10px 0; }
+  /* 上游 markdown 根：用于验证「原生 GFM/表格/代码块」不被我们的气泡破坏。 */
+  .markdown { overflow-wrap: anywhere; min-width: 0; }
+  .markdown p { margin: 16px 0; }
+  .markdown :first-child { margin-top: 0 !important; }
+  .markdown :last-child { margin-bottom: 0 !important; }
+  .markdown table { border-collapse: collapse; }
+  .markdown .tableScroll { max-width: 100%; overflow-x: auto; }
+  /* 上游宽表钩子（md-table-wide）的近似：真实实现还有 100cqw 负 margin 破栏，
+     本插件在气泡内把它改回气泡内滚动（见 lib 的 CSS 覆盖）。 */
+  .tableScroll { max-width: 100%; overflow-x: auto; }
+  .tableScroll table { width: max-content; max-width: max-content; }
+  .tableScroll th, .tableScroll td { min-width: 120px; border: 1px solid var(--dsw-alias-border-l2); padding: 6px 10px; }
+</style>
+</head>
+<body>
+<div id="stage" class="flow"></div>
+<pre id="e2e-results" hidden></pre>
+<script>
+  window.__ModuleLoader__ = { load(registration) { window.__registration = registration } }
+  window.__xss = 0
+</script>
+<script src="../../client.js"></script>
+<script src="./e2e-browser.js"></script>
+</body>
+</html>
