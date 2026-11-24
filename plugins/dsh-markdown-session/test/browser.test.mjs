@@ -126,7 +126,7 @@ test('视觉证据：浅色/深色气泡截图', { skip: SKIP_REASON }, () => {
     execFileSync(CHROME, [
       ...chromeArgs(profile),
       '--virtual-time-budget=5000',
-      '--window-size=1100,1250',
+      '--window-size=1100,1400',
       '--screenshot=' + target,
       url,
     ], { encoding: 'utf8', timeout: 180000, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
@@ -138,7 +138,7 @@ test('视觉证据：浅色/深色气泡截图', { skip: SKIP_REASON }, () => {
     const width = buffer.readUInt32BE(16)
     const height = buffer.readUInt32BE(20)
     assert.equal(width, 1100, '截图宽度异常: ' + width)
-    assert.ok(height >= 900, '截图高度异常: ' + height)
+    assert.ok(height >= 1000, '截图高度异常: ' + height)
     outputs.push(theme + '=' + buffer.length + 'B/' + width + 'x' + height)
   }
   process.stdout.write('[visual] ' + outputs.join(' ') + '\n')

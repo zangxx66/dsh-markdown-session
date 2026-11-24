@@ -339,8 +339,70 @@
       assert(wrapper.querySelector('table') !== null, '表格不在包装内')
     })
 
-    /* ---- 5. apply：样式、槽注册、观察器、浅深色对比度、回归、卸载 ---- */
+    /* ---- 5. apply：气泡（流式+落定）、样式、槽注册、观察器、对比度、回归、卸载 ---- */
     stage.innerHTML = ''
+
+    /**
+     * 复刻 ui-chat 的真实消息结构：
+     *   div[data-chat-flow-kind="assistant-step"]
+     *     > div[data-slot="conversation.chat.node"]（display:contents）
+     *       > AssistantMarkdown 根 div
+     *         > .body
+     *           > MarkdownText 根 div（settled 才有 data-text-interaction-source）
+     *           > 思考块 / 隐藏过程
+     */
+    function buildAssistantRow(options) {
+      var flow = el('div', { 'data-chat-flow-kind': 'assistant-step' })
+      var anchor = el('div', { 'data-slot': 'conversation.chat.node' })
+      var root = el('div', { class: 'assist-root' })
+      if (options.streaming) root.setAttribute('data-streaming', '')
+      var body = el('div', { class: 'assist-body' })
+      var markdown = el('div', { class: 'markdown' })
+      if (options.textInteractionSource) markdown.setAttribute('data-text-interaction-source', '')
+      if (options.markdown) markdown.innerHTML = api.renderUserMarkdown(options.markdown)
+      if (options.literalHtml) {
+        var paragraph = el('p', null, options.literalHtml)
+        markdown.appendChild(paragraph)
+      }
+      body.appendChild(markdown)
+      var think = el('div', { 'data-variant': 'think', class: 'fake-think' })
+      think.textContent = '思考块 <b>不应解析</b>'
+      body.appendChild(think)
+      var hidden = el('div', { 'data-turn-process-inline': '' })
+      hidden.setAttribute('hidden', '')
+      hidden.textContent = '隐藏的折叠过程'
+      body.appendChild(hidden)
+      root.appendChild(body)
+      anchor.appendChild(root)
+      flow.appendChild(anchor)
+      return { flow: flow, anchor: anchor, root: root, body: body, markdown: markdown, think: think, hidden: hidden }
+    }
+
+    var settled = buildAssistantRow({
+      textInteractionSource: true,
+      markdown: '助手 **回复**\n\n| 列1 | 列2 |\n| - | - |\n| a | b |',
+      literalHtml: '内嵌 HTML：<b>粗体</b> 与 <kbd>Ctrl</kbd>',
+    })
+    var wideHolder = el('div')
+    wideHolder.innerHTML = '<div class="tableScroll md-table-wide"><table><thead><tr>'
+      + new Array(12).fill('<th>宽列</th>').join('')
+      + '</tr></thead><tbody><tr>' + new Array(12).fill('<td>值</td>').join('') + '</tr></tbody></table></div>'
+    settled.markdown.appendChild(wideHolder)
+    var codeBlock = el('div', { class: 'md-code-block' })
+    var banner = el('div', { 'data-code-block-banner': '' }, 'javascript · 复制')
+    banner.style.position = 'sticky'
+    banner.style.top = '0px'
+    var codeContent = el('div', { 'data-code-block-content': '' })
+    codeContent.innerHTML = '<pre><code>const x = 1</code></pre>'
+    codeBlock.append(banner, codeContent)
+    settled.markdown.appendChild(codeBlock)
+
+    var streaming = buildAssistantRow({
+      streaming: true,
+      markdown: '流式 **生成中**',
+      literalHtml: '流式字面 <b>暂不处理</b>',
+    })
+
     var userFlow = el('div', { 'data-chat-flow-kind': 'user' })
     var userColumn = el('div')
     var bubble = el('div', { 'data-message-bubble': '' })
@@ -350,28 +412,37 @@
     userColumn.appendChild(bubble)
     userFlow.appendChild(userColumn)
 
-    var assistantFlow = el('div', { 'data-chat-flow-kind': 'assistant-step' })
-    var assistantBody = el('div', { 'data-text-interaction-source': '' })
-    assistantBody.innerHTML = api.renderUserMarkdown('助手 **回复**\n\n| 列1 | 列2 |\n| - | - |\n| a | b |')
-    var wideTableHolder = el('div')
-    wideTableHolder.innerHTML = '<div class="tableScroll md-table-wide"><table><thead><tr>'
-      + new Array(12).fill('<th>宽列</th>').join('')
-      + '</tr></thead><tbody><tr>' + new Array(12).fill('<td>值</td>').join('') + '</tr></tbody></table></div>'
-    assistantBody.appendChild(wideTableHolder)
-    assistantFlow.appendChild(assistantBody)
-
     var toolFlow = el('div', { 'data-chat-flow-kind': 'tool-call' })
     toolFlow.innerHTML = '<div class="tool-card"><button type="button">复制</button></div>'
     var thinkFlow = el('div', { 'data-variant': 'think' })
-    thinkFlow.textContent = '思考中…'
+    thinkFlow.textContent = '独立思考行'
 
-    stage.append(userFlow, assistantFlow, toolFlow, thinkFlow)
+    stage.append(userFlow, settled.flow, streaming.flow, toolFlow, thinkFlow)
 
     var button = toolFlow.querySelector('button')
     var clicks = 0
     button.addEventListener('click', function () { clicks += 1 })
+
+    function rowLayoutSnapshot(node) {
+      var style = window.getComputedStyle(node)
+      return {
+        display: style.display,
+        justifyContent: style.justifyContent,
+        alignItems: style.alignItems,
+        flexDirection: style.flexDirection,
+        padding: style.padding,
+        background: style.backgroundColor,
+      }
+    }
+    function thinkSnapshot(node) {
+      var style = window.getComputedStyle(node)
+      return { display: style.display, padding: style.padding, border: style.border, background: style.backgroundColor, margin: style.margin }
+    }
+
     var beforeTool = window.getComputedStyle(toolFlow.querySelector('.tool-card'))
     var beforeButton = window.getComputedStyle(button)
+    var beforeRows = [rowLayoutSnapshot(userFlow), rowLayoutSnapshot(settled.flow), rowLayoutSnapshot(streaming.flow)]
+    var beforeThink = [thinkSnapshot(settled.think), thinkSnapshot(settled.hidden), thinkSnapshot(thinkFlow)]
 
     var ctx = createFakeCtx()
     var dispose = plugin.apply(ctx)
@@ -387,49 +458,96 @@
       assertEqual(typeof ctx.slot.component, 'function', '槽组件')
     })
 
-    await check('气泡/用户右对齐 + 浅色对比度', function () {
-      var userRowStyle = window.getComputedStyle(userFlow)
-      // Chrome 158 起计算值可能报逻辑别名 flow-end/flow-start（等价 flex-end/flex-start）。
-      assert(['flex-end', 'flow-end', 'end'].includes(userRowStyle.justifyContent), '用户行未右对齐: ' + userRowStyle.justifyContent)
-      var bubbleStyle = window.getComputedStyle(bubble)
-      assertEqual(colorOf(bubbleStyle.backgroundColor) !== null, true, '用户气泡无背景')
-      var markdownStyle = window.getComputedStyle(userMarkdown)
-      assertEqual(markdownStyle.whiteSpace, 'normal', '用户 markdown 未覆盖 pre-wrap')
-      var light = textContrast(userMarkdown, bubble)
-      assert(light.ratio >= 4.5, '浅色用户气泡对比度不足：' + light.ratio.toFixed(2) + ' (' + light.text + ' / ' + light.background + ')')
-      window.__lightContrast = light.ratio
+    await check('气泡/流式态（无 settled 属性）也有气泡外壳', function () {
+      var rootStyle = window.getComputedStyle(streaming.root)
+      assert(colorOf(rootStyle.backgroundColor) !== null, '流式消息无气泡背景')
+      assert(parseFloat(rootStyle.borderRadius) > 0, '流式消息无圆角')
+      assert(parseFloat(rootStyle.paddingLeft) > 0, '流式消息无内边距')
+      assert(streaming.markdown.getAttribute('data-text-interaction-source') === null, '流式分支不应有 settled 属性')
+      // 流式期间后处理必须不动：字面 HTML 仍是文本
+      assertEqual(streaming.markdown.querySelector('b'), null, '流式消息被后处理（错误）')
+      assert(streaming.markdown.textContent.indexOf('<b>暂不处理</b>') >= 0, '流式字面 HTML 文本被改')
     })
 
-    await check('气泡/助手左对齐、圆角、浅色对比度', function () {
-      var assistantRowStyle = window.getComputedStyle(assistantFlow)
-      assert(['flex-start', 'flow-start', 'start', 'normal'].includes(assistantRowStyle.justifyContent), '助手行未左对齐: ' + assistantRowStyle.justifyContent)
-      var bodyStyle = window.getComputedStyle(assistantBody)
-      assert(colorOf(bodyStyle.backgroundColor) !== null, '助手气泡无背景')
-      assert(parseFloat(bodyStyle.borderRadius) > 0, '助手气泡无圆角')
-      assert(parseFloat(bodyStyle.paddingLeft) > 0, '助手气泡无内边距')
-      assert(bodyStyle.maxWidth !== 'none', '助手气泡缺少 max-width')
-      var light = textContrast(assistantBody)
-      assert(light.ratio >= 4.5, '浅色助手气泡对比度不足：' + light.ratio.toFixed(2))
-      window.__assistantLightContrast = light.ratio
+    await check('气泡/落定态：外壳在消息根而不是 Markdown 根', function () {
+      var rootStyle = window.getComputedStyle(settled.root)
+      var markdownStyle = window.getComputedStyle(settled.markdown)
+      assert(colorOf(rootStyle.backgroundColor) !== null, '落定消息无气泡背景')
+      assert(parseFloat(rootStyle.borderRadius) > 0, '落定消息无圆角')
+      assertEqual(colorOf(markdownStyle.backgroundColor).a, 0, '气泡被错误地加在 Markdown 根上')
+      assert(settled.root.contains(settled.think), '气泡未覆盖思考块子块')
+      assert(settled.root.contains(settled.hidden), '气泡未覆盖折叠过程子块')
+      // settled 后处理仍生效（选择器保持 [data-text-interaction-source]）
+      assert(settled.markdown.querySelector('b') !== null, '落定消息后处理失效')
+      assert(settled.markdown.querySelector('kbd') !== null, '落定消息 kbd 未渲染')
     })
 
-    await check('气泡/深色主题可读', function () {
-      document.body.setAttribute('data-ds-dark-theme', '')
-      var user = textContrast(userMarkdown, bubble)
-      var assistant = textContrast(assistantBody)
-      assert(user.ratio >= 4.5, '深色用户气泡对比度不足：' + user.ratio.toFixed(2))
-      assert(assistant.ratio >= 4.5, '深色助手气泡对比度不足：' + assistant.ratio.toFixed(2))
-      window.__darkContrast = { user: user.ratio, assistant: assistant.ratio }
-      document.body.removeAttribute('data-ds-dark-theme')
+    await check('气泡/内部 .body gap 与思考块、折叠隐藏不受影响', function () {
+      assertEqual(window.getComputedStyle(settled.body).rowGap, '16px', '.body gap 被破坏')
+      var afterThink = [thinkSnapshot(settled.think), thinkSnapshot(settled.hidden), thinkSnapshot(thinkFlow)]
+      for (var index = 0; index < afterThink.length; index++) {
+        assertEqual(JSON.stringify(afterThink[index]), JSON.stringify(beforeThink[index]), '思考/隐藏子块样式被改变 #' + index)
+      }
+      assertEqual(window.getComputedStyle(settled.hidden).display, 'none', '折叠隐藏失效')
+    })
+
+    await check('气泡/sticky 代码 banner 未被 transform/overflow 破坏', function () {
+      var bannerStyle = window.getComputedStyle(banner)
+      var rootStyle = window.getComputedStyle(settled.root)
+      assertEqual(bannerStyle.position, 'sticky', '代码 banner 不再是 sticky')
+      assertEqual(rootStyle.overflow, 'visible', '气泡根设置了 overflow（会破坏 sticky）')
+      assertEqual(rootStyle.transform, 'none', '气泡根设置了 transform（会破坏 sticky）')
     })
 
     await check('表格/宽表在气泡内滚动且页面不横向撑破', function () {
-      var wrapper = assistantBody.querySelector('.md-table-wide')
+      var wrapper = settled.markdown.querySelector('.md-table-wide')
       assert(wrapper !== null, '缺宽表')
       var style = window.getComputedStyle(wrapper)
       assertEqual(style.overflowX, 'auto', '宽表未横向滚动')
       assert(wrapper.scrollWidth > wrapper.clientWidth, '宽表未产生内部滚动：' + wrapper.scrollWidth + '/' + wrapper.clientWidth)
       assert(document.documentElement.scrollWidth <= window.innerWidth + 1, '页面被宽表撑破：' + document.documentElement.scrollWidth + ' > ' + window.innerWidth)
+    })
+
+    await check('行容器/不注入无效布局属性（用户右/助手左由上游自身提供）', function () {
+      var afterRows = [rowLayoutSnapshot(userFlow), rowLayoutSnapshot(settled.flow), rowLayoutSnapshot(streaming.flow)]
+      for (var index = 0; index < afterRows.length; index++) {
+        assertEqual(JSON.stringify(afterRows[index]), JSON.stringify(beforeRows[index]), '行容器布局被插件改动 #' + index)
+      }
+      var styleText = document.querySelector('style[data-plugin="dsh-markdown-session"]').textContent
+      assertEqual(styleText.indexOf('justify-content'), -1, '样式里仍向行容器注入 justify-content')
+      // 右/左对齐来自上游结构（用户行块级满宽 + align-items:flex-end；助手根在 .body 内左起）。
+      var bubbleRect = bubble.getBoundingClientRect()
+      var userRowRect = userFlow.getBoundingClientRect()
+      assert(Math.abs(bubbleRect.right - userRowRect.right) <= 2, '用户气泡未右对齐：' + bubbleRect.right + ' vs ' + userRowRect.right)
+      var settledRect = settled.root.getBoundingClientRect()
+      var assistantRowRect = settled.flow.getBoundingClientRect()
+      assert(Math.abs(settledRect.left - assistantRowRect.left) <= 2, '助手气泡未左对齐：' + settledRect.left + ' vs ' + assistantRowRect.left)
+    })
+
+    await check('气泡/浅色对比度（用户与助手、流式与落定）', function () {
+      var user = textContrast(userMarkdown, bubble)
+      var settledLight = textContrast(settled.markdown, settled.root)
+      var streamingLight = textContrast(streaming.markdown, streaming.root)
+      assert(user.ratio >= 4.5, '浅色用户气泡对比度不足：' + user.ratio.toFixed(2))
+      assert(settledLight.ratio >= 4.5, '浅色落定助手气泡对比度不足：' + settledLight.ratio.toFixed(2))
+      assert(streamingLight.ratio >= 4.5, '浅色流式气泡对比度不足：' + streamingLight.ratio.toFixed(2))
+      window.__lightContrast = user.ratio
+      window.__assistantLightContrast = Math.min(settledLight.ratio, streamingLight.ratio)
+    })
+
+    await check('气泡/深色主题可读（用户与助手、流式与落定）', function () {
+      document.body.setAttribute('data-ds-dark-theme', '')
+      var user = textContrast(userMarkdown, bubble)
+      var settledDark = textContrast(settled.markdown, settled.root)
+      var streamingDark = textContrast(streaming.markdown, streaming.root)
+      assert(user.ratio >= 4.5, '深色用户气泡对比度不足：' + user.ratio.toFixed(2))
+      assert(settledDark.ratio >= 4.5, '深色落定助手气泡对比度不足：' + settledDark.ratio.toFixed(2))
+      assert(streamingDark.ratio >= 4.5, '深色流式气泡对比度不足：' + streamingDark.ratio.toFixed(2))
+      window.__darkContrast = {
+        user: user.ratio,
+        assistant: Math.min(settledDark.ratio, streamingDark.ratio),
+      }
+      document.body.removeAttribute('data-ds-dark-theme')
     })
 
     await check('不回归/工具卡与按钮样式点击不受影响', function () {
@@ -443,21 +561,17 @@
       assertEqual(clicks, 1, '按钮点击失效')
     })
 
-    await check('不回归/思考块文本未被当成 HTML', function () {
-      assertEqual(thinkFlow.textContent, '思考中…', '思考块文本被改')
-      assertEqual(thinkFlow.querySelector('b'), null, '思考块生成了元素')
-    })
-
-    var secondFlow = null
-    await check('观察器/新落定消息被去抖处理', async function () {
-      secondFlow = el('div', { 'data-chat-flow-kind': 'assistant-step' })
-      var body = el('div', { 'data-text-interaction-source': '' })
-      body.textContent = '新消息 <b>粗</b>'
-      secondFlow.appendChild(body)
-      stage.appendChild(secondFlow)
+    var second = null
+    await check('观察器/新落定消息被去抖处理（流式仍跳过）', async function () {
+      second = buildAssistantRow({ textInteractionSource: true, literalHtml: '新消息 <b>粗</b>' })
+      stage.appendChild(second.flow)
+      var streamingLate = buildAssistantRow({ streaming: true, literalHtml: '后到流式 <b>不处理</b>' })
+      stage.appendChild(streamingLate.flow)
       await wait(500)
-      assert(body.querySelector('b') !== null, 'MutationObserver 未处理新消息')
-      window.__secondBody = body
+      assert(second.markdown.querySelector('b') !== null, 'MutationObserver 未处理新落定消息')
+      assertEqual(streamingLate.markdown.querySelector('b'), null, 'MutationObserver 处理了流式消息（错误）')
+      window.__second = second
+      window.__streamingLate = streamingLate
     })
 
     await check('卸载/恢复原样且不再处理新消息', async function () {
@@ -465,18 +579,17 @@
       assertEqual(document.documentElement.getAttribute('data-dsh-md-session'), null, '根属性未移除')
       assert(document.querySelector('style[data-plugin="dsh-markdown-session"]') === null, '样式未移除')
       assertEqual(ctx.slot, null, '槽注册未撤销')
-      var restored = window.__secondBody
-      assertEqual(restored.textContent, '新消息 <b>粗</b>', '已替换内容未还原')
-      var after = el('div', { 'data-chat-flow-kind': 'assistant-step' })
-      var afterBody = el('div', { 'data-text-interaction-source': '' })
-      afterBody.textContent = '卸载后 <b>不应处理</b>'
-      after.appendChild(afterBody)
-      stage.appendChild(after)
+      assertEqual(window.__second.markdown.textContent, '新消息 <b>粗</b>', '已替换内容未还原')
+      var after = buildAssistantRow({ textInteractionSource: true, literalHtml: '卸载后 <b>不应处理</b>' })
+      stage.appendChild(after.flow)
       await wait(500)
-      assertEqual(afterBody.querySelector('b'), null, '卸载后仍处理新消息（监听未摘除）')
-      // 清理，避免污染后续截图页
-      window.__secondBody = null
+      assertEqual(after.markdown.querySelector('b'), null, '卸载后仍处理新消息（监听未摘除）')
+      // 流式文字在卸载前就不该被处理
+      assertEqual(window.__streamingLate.markdown.querySelector('b'), null, '流式文字被处理')
+      window.__second = null
+      window.__streamingLate = null
     })
+
 
     /* ---- 6. 报告 ---- */
     var failures = results.filter(function (item) { return !item.ok })

@@ -1,7 +1,7 @@
 /**
  * dsh-markdown-session — 浏览器半边（GENERATED FILE，勿手改）。
  * 由 scripts/build.mjs 生成：marked 16.4.2 (MIT) + DOMPurify 3.4.17 (Apache-2.0/MPL-2.0) 内联。
- * vendor 指纹：marked=d6d1c8f0d60fec5e purify=b70f3f13df45539c core=596d3a2d743f8902。
+ * vendor 指纹：marked=d6d1c8f0d60fec5e purify=b70f3f13df45539c core=05f2db964794ab60。
  * 许可证：见 vendor/marked.LICENSE.md、vendor/purify.LICENSE 与 README「第三方」小节。
  */
 window.__ModuleLoader__.load({
@@ -3085,9 +3085,13 @@ module.exports = purify_default;
       function MarkdownUserText(props) {
         var node = props !== null && props !== undefined ? props.node : undefined
         var data = node !== null && node !== undefined ? node.data : undefined
-        var text = data !== null && data !== undefined && typeof data.text === 'string'
-          ? data.text
-          : (props !== null && props !== undefined && typeof props.raw === 'string' ? props.raw : '')
+        // 上游 PlainUserText 取 data.display ?? data.text；display 由 trim/collapse/
+        // sessionReference 等规则产出（例如空白折叠为单个空格），必须优先采用。
+        var text = data !== null && data !== undefined && typeof data.display === 'string' && data.display !== ''
+          ? data.display
+          : (data !== null && data !== undefined && typeof data.text === 'string'
+            ? data.text
+            : (props !== null && props !== undefined && typeof props.raw === 'string' ? props.raw : ''))
         var html = React.useMemo(function () { return renderUserMarkdown(text) }, [text])
         var containerRef = React.useRef(null)
         var previewState = React.useState(false)
@@ -3365,13 +3369,14 @@ module.exports = purify_default;
     'html[' + ROOT_ATTR + '="on"] mark[' + MARK_ATTR + ']{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 28%,transparent);color:inherit;border-radius:2px;padding:0 2px}',
     'html[' + ROOT_ATTR + '="on"] [' + MARK_ATTR + '] a{color:var(--dsw-alias-link)}',
     'html[' + ROOT_ATTR + '="on"] [' + MARK_ATTR + '] img{max-width:100%;height:auto}',
-    /* ---- 助手气泡：左对齐、圆角、浅/深色随主题变量 ---- */
-    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"] [data-text-interaction-source]{box-sizing:border-box;align-self:flex-start;width:fit-content;max-width:min(calc(var(--dsh-chat-content-width,748px) * 0.86),100%);padding:12px 16px;border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-markdown-code-block);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}',
-    /* 宽表破栏依赖 100cqw 与内容列宽；气泡内改为气泡内滚动（判据 9），避免撑破页面。 */
-    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"] [data-text-interaction-source] .md-table-wide{width:100%!important;max-width:100%!important;overflow-x:auto!important;margin-left:0!important;padding-left:0!important}',
-    /* ---- 用户行右侧、助手行左侧（行结构不动，只改对齐） ---- */
-    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="user"]{justify-content:flex-end}',
-    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"]{justify-content:flex-start}',
+    /* ---- 助手气泡：消息级外壳，锚在 AssistantMarkdown 根 div。
+       ChatNodeSeat 行 div（[data-chat-flow-kind]）→ slot 锚 [data-slot="conversation.chat.node"]
+       （display:contents）→ AssistantNodeView/AssistantMarkdown 唯一根 div。
+       该根 div 在流式（data-streaming）与历史中间 step 上同样存在，因此气泡不再依赖
+       「settled 才置位」的 [data-text-interaction-source]；后处理仍只看 settled。 ---- */
+    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"] > [data-slot="conversation.chat.node"] > div{box-sizing:border-box;align-self:flex-start;width:fit-content;max-width:min(calc(var(--dsh-chat-content-width,748px) * 0.86),100%);padding:12px 16px;border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-markdown-code-block);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}',
+    /* 宽表破栏依赖 100cqw 与内容列宽；气泡内改为气泡内滚动（判据 9），流式/落定都生效。 */
+    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"] > [data-slot="conversation.chat.node"] > div .md-table-wide{width:100%!important;max-width:100%!important;overflow-x:auto!important;margin-left:0!important;padding-left:0!important}',
   ].join('\n')
 
   return createMarkdownSession

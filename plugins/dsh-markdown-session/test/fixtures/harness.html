@@ -51,8 +51,11 @@
   }
   .flow { max-width: 748px; margin: 0 auto; padding: 16px; }
   /* 复刻上游 user 行与气泡的最小语义结构（hash 类名不可依赖）。 */
-  [data-chat-flow-kind="user"] { display: flex; justify-content: flex-start; margin: 10px 0; }
-  [data-chat-flow-kind="user"] > div { display: flex; flex-direction: column; align-items: flex-end; max-width: 82%; }
+  /* 上游用户行（MessageItem .userRow）：块级满宽 + align-items:flex-end → 气泡右对齐。
+     本插件不注入任何行布局，右对齐必须来自上游结构。 */
+  [data-chat-flow-kind="user"] { display: block; margin: 10px 0; }
+  [data-chat-flow-kind="user"] > div { display: flex; flex-direction: column; align-items: flex-end; width: 100%; }
+  [data-chat-flow-kind="user"] [data-message-bubble] { max-width: 82%; }
   [data-message-bubble] {
     background: var(--dsw-specific-bubble);
     border-radius: var(--dsw-radius-xl);
@@ -63,6 +66,12 @@
     word-break: break-word;
   }
   [data-chat-flow-kind="assistant-step"] { display: flex; flex-direction: column; margin: 10px 0; }
+  /* ChatNodeSeat 的 slot 锚点（真实实现由 SlotOutlet 注入 display:contents），
+     以及 AssistantMarkdown 根/正文的最小结构近似。 */
+  [data-slot] { display: contents; }
+  .assist-root { display: flex; flex-direction: column; }
+  .assist-body { display: flex; flex-direction: column; gap: 16px; --dsh-assistant-block-gap: 16px; }
+  .fake-think { border-left: 2px solid var(--dsw-alias-border-l2); padding: 2px 10px; color: var(--dsw-alias-label-secondary); }
   /* 上游 markdown 根：用于验证「原生 GFM/表格/代码块」不被我们的气泡破坏。 */
   .markdown { overflow-wrap: anywhere; min-width: 0; }
   .markdown p { margin: 16px 0; }

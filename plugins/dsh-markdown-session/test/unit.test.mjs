@@ -350,6 +350,22 @@ test('无 slots 的上下文不抛错，返回幂等 dispose', () => {
   assert.equal(document.attrs.has('data-dsh-md-session'), false)
 })
 
+test('气泡锚点是消息节点根：流式与历史 step 都有外壳，且不向行容器注入无效布局', () => {
+  const { session } = createSession()
+  const css = session.CSS
+  // 气泡必须锚在 AssistantMarkdown 根 div（行 → slot 锚 → 根 div），不能锚在 settled 才有的属性上。
+  assert.ok(css.includes('[data-chat-flow-kind="assistant-step"] > [data-slot="conversation.chat.node"] > div{'), '气泡未锚到消息根 div')
+  const bubbleRule = css.split('\n').find((line) => line.includes('[data-chat-flow-kind="assistant-step"] > [data-slot="conversation.chat.node"] > div{'))
+  assert.ok(bubbleRule, '找不到气泡规则')
+  assert.equal(bubbleRule.includes('[data-text-interaction-source]'), false, '气泡规则不得依赖 settled 属性')
+  assert.ok(bubbleRule.includes('border-radius') && bubbleRule.includes('background'), '气泡缺少圆角/背景')
+  // 行容器不是 flex 容器：不得对 [data-chat-flow-kind] 注入布局属性。
+  assert.equal(css.includes('justify-content'), false, '不得向行容器注入 justify-content')
+  assert.equal(/\[data-chat-flow-kind="(user|assistant-step)"\]\{/.test(css), false, '不得直接改行容器布局')
+  // 后处理/表格美化仍按 settled 属性（正确，保持）。
+  assert.ok(css.includes('[data-chat-flow-kind="assistant-step"] [data-text-interaction-source]'))
+})
+
 test('样式不含 transform / 不针对工具卡与思考块，避免破坏 sticky banner 与既有 UI', () => {
   const { session } = createSession()
   const css = session.CSS
@@ -358,7 +374,6 @@ test('样式不含 transform / 不针对工具卡与思考块，避免破坏 sti
   assert.equal(css.includes('[data-code-block-banner]'), false)
   assert.equal(/\._[a-zA-Z0-9]{5,}_/.test(css), false, '不得依赖 CSS module hash 类名')
   assert.ok(css.includes('--dsw-alias-markdown-code-block'))
-  assert.ok(css.includes('[data-chat-flow-kind="assistant-step"] [data-text-interaction-source]'))
 })
 
 /* ------------------------------------------------------------------ */
@@ -389,6 +404,20 @@ test('预览检测沿祖先链找到 ellipsis 容器（槽锚点是 display:cont
   }
   const previewSession = createSession({ window: previewWindow }).session
   assert.equal(previewSession.detectPreviewMode(host), true)
+})
+
+test('用户消息优先采用上游 data.display（trim/collapse 规则的展示文本）', () => {
+  const { session } = createSession()
+  const Component = session.createUserTextComponent()
+  const rendered = Component({
+    node: { id: 'text', data: { text: '原始 **文本**', display: '折叠后 **展示**' } },
+  })
+  const html = rendered.props.dangerouslySetInnerHTML.__html
+  assert.ok(html.includes('折叠后'), '未采用 data.display')
+  assert.equal(html.includes('原始'), false, '错误地使用了 data.text')
+  // display 为空串时回退 data.text（与「非空 string 优先」约定一致）
+  const fallback = Component({ node: { id: 'text', data: { text: '**回退**', display: '' } } })
+  assert.ok(fallback.props.dangerouslySetInnerHTML.__html.includes('<strong>回退</strong>'), '空 display 未回退 data.text')
 })
 
 test('空文本组件降级为纯文本 span，不产生空 div', () => {

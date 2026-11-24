@@ -5,7 +5,7 @@ DSH Web GUI 的会话 Markdown 渲染插件（客户端增强，单包双半边�
 - **用户消息（发送侧）**：接管 `conversation.user.text.node` key=`text` 子槽，用 marked(GFM) 渲染 Markdown，代码块等宽、表格边框/斑马纹、宽表横向滚动。
 - **助手消息（接收侧）**：不接管 React 渲染树，保留原生 GFM / 表格 / KaTeX / Shiki；用 DOM 后处理把「显示为字面文本的白名单 HTML」替换成清洗后的真实元素（`<details>`、`<kbd>`、`<table>`…）。
 - **XSS 防护**：所有消息内容视为不可信。DOMPurify 强白名单（标签 + 属性 + URI 正则 + `afterSanitizeAttributes` 钩子），没有 sanitizer 时失败关闭。
-- **聊天气泡**：用户右对齐、助手左对齐；浅/深色都使用 DSH 主题变量。
+- **聊天气泡**：用户右对齐（沿用上游 `.userRow` 结构）、助手左对齐；气泡锚在消息根，**流式与历史中间 step 同样有气泡**（不依赖 settled 才有的属性）；浅/深色都使用 DSH 主题变量。
 - **可逆卸载**：禁用插件后移除样式、根属性、MutationObserver，并把已替换的 HTML 还原成字面文本。
 
 ![浅色](test/artifacts/bubbles-light.png)
@@ -59,8 +59,10 @@ template.innerHTML = text（惰性，不执行脚本）→ DOMPurify.sanitize �
 
 全部规则以 `html[data-dsh-md-session="on"]` 作用域注入，禁用即失效：
 
-- 用户行右对齐、助手行左对齐（不改 `[data-chat-flow-kind]` 行结构、不设 `transform`，避免破坏 viewport 测量与 sticky 代码 banner）。
-- 助手正文根加背景/圆角/内边距/最大宽度，颜色取 `--dsw-alias-markdown-code-block`、`--dsw-alias-label-primary` 等主题变量，浅/深色自动适配。
+- 助手气泡锚在 **AssistantMarkdown 根 div**：`[data-chat-flow-kind="assistant-step"] > [data-slot="conversation.chat.node"] > div`（行 → slot 锚点 → 消息根）。该根在流式（`data-streaming`）与历史中间 step 上同样存在，所以气泡不等落定；气泡因此同时包住 reasoning / images 子块。
+- 不向 `[data-chat-flow-kind]` 行容器注入任何布局属性（行不是 flex 容器）：用户右对齐来自上游 `.userRow{align-items:flex-end}`，助手左对齐来自 `.body{flex-direction:column}` + 根 div 的 `width:fit-content`。
+- 不设 `transform`、不给气泡根设 `overflow:hidden`，避免破坏 sticky 代码 banner；`.body` 的 16px gap 与折叠隐藏行为保持不变。
+- 颜色取 `--dsw-alias-markdown-code-block`、`--dsw-alias-label-primary` 等主题变量，浅/深色自动适配。
 - 表格统一边框 + 斑马纹（用户侧、内嵌 HTML、助手原生表格）。
 - 宽表 `.md-table-wide` 的「破栏负 margin」在气泡内改为**气泡内横向滚动**（`overflow-x:auto`），不撑破页面宽度。
 
@@ -80,7 +82,7 @@ npm test        # 构建 + node:test（单元 + 真浏览器 E2E）
 ```
 
 - `test/unit.test.mjs`：GFM 结构、管线顺序、白名单配置、URL 策略、apply/dispose、组件输出、bundle 形态。
-- `test/browser.test.mjs`：无头 Chrome（`DSH_CHROME_PATH` 可覆盖路径；找不到时跳过）加载 `test/fixtures/harness.html`，验证 30+ XSS payload 零执行、字面 HTML 替换与还原、气泡对比度（WCAG ≥4.5）、宽表滚动、工具卡/按钮负向回归，并生成浅/深色视觉截图。
+- `test/browser.test.mjs`：无头 Chrome（`DSH_CHROME_PATH` 可覆盖路径；找不到时跳过）加载 `test/fixtures/harness.html`，验证 30+ XSS payload 零执行、字面 HTML 替换与还原、**流式态/落定态两种气泡**、气泡对比度（WCAG ≥4.5）、宽表滚动、行容器布局不被注入、工具卡/按钮负向回归，并生成浅/深色视觉截图。
 - `node scripts/build.mjs`：把 `vendor/marked.umd.cjs`、`vendor/purify.cjs.js` 与 `lib/markdown-session.cjs` 内联成 classic script `client.js`（浏览器官网只共享 11 个静态模块，loader 不解析 bare 包；只有 `react` 走宿主静态表）。
 
 ### 已知限制

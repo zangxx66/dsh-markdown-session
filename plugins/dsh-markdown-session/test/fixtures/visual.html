@@ -61,8 +61,9 @@
   }
   .fixture-note b { color: var(--dsw-alias-label-primary); }
   .flow-row { margin: 12px 0; }
-  [data-chat-flow-kind="user"] { display: flex; justify-content: flex-start; }
-  [data-chat-flow-kind="user"] > div { display: flex; flex-direction: column; align-items: flex-end; max-width: min(calc(var(--dsh-chat-content-width) * 0.702), 82%); }
+  [data-chat-flow-kind="user"] { display: block; }
+  [data-chat-flow-kind="user"] > div { display: flex; flex-direction: column; align-items: flex-end; width: 100%; }
+  [data-chat-flow-kind="user"] [data-message-bubble] { max-width: min(calc(var(--dsh-chat-content-width) * 0.702), 82%); }
   [data-message-bubble] {
     background: var(--dsw-specific-bubble);
     border-radius: var(--dsw-radius-xl);
@@ -73,6 +74,10 @@
     word-break: break-word;
   }
   [data-chat-flow-kind="assistant-step"] { display: flex; flex-direction: column; }
+  /* slot 锚点 display:contents + AssistantMarkdown 根/正文的最小结构近似 */
+  [data-slot] { display: contents; }
+  .assist-root { display: flex; flex-direction: column; }
+  .assist-body { display: flex; flex-direction: column; gap: 16px; --dsh-assistant-block-gap: 16px; }
   /* 原生 markdown 根的近似（真实实现由 ui-primitives 自带 hash 类名样式）。 */
   .markdown { overflow-wrap: anywhere; min-width: 0; color: var(--dsw-alias-label-primary); }
   .markdown p { margin: 10px 0; }
@@ -102,7 +107,6 @@
 <body>
 <main class="page">
   <p class="fixture-note"><b>dsh-markdown-session 视觉 fixture</b>：主题变量取自 DSH ui-theme 的近似值，用于展示用户/助手气泡、GFM 表格、代码块与内嵌 HTML；非真机截图。</p>
-  <div class="section-label">用户消息（右对齐气泡 · 发送侧 Markdown）</div>
   <div id="stage"></div>
 </main>
 <script>
@@ -139,6 +143,13 @@
 
     var stage = document.getElementById('stage')
 
+    function sectionLabel(text) {
+      var label = document.createElement('div')
+      label.className = 'section-label'
+      label.textContent = text
+      stage.appendChild(label)
+    }
+
     function userRow(markdown) {
       var flow = document.createElement('div')
       flow.setAttribute('data-chat-flow-kind', 'user')
@@ -157,22 +168,45 @@
       return flow
     }
 
-    function assistantRow(markdown, literalHtml) {
+    /**
+     * 真实消息结构：行 → slot 锚点（display:contents）→ AssistantMarkdown 根 → .body → MarkdownText 根。
+     * 流式态没有 data-text-interaction-source（settled 才置位），但根 div 存在，气泡照常生效。
+     */
+    function assistantRow(options) {
       var flow = document.createElement('div')
       flow.setAttribute('data-chat-flow-kind', 'assistant-step')
       flow.className = 'flow-row'
+      var anchor = document.createElement('div')
+      anchor.setAttribute('data-slot', 'conversation.chat.node')
+      var root = document.createElement('div')
+      root.className = 'assist-root'
+      if (options.streaming) root.setAttribute('data-streaming', '')
       var body = document.createElement('div')
-      body.setAttribute('data-text-interaction-source', '')
-      body.innerHTML = api.renderUserMarkdown(markdown)
-      if (literalHtml) {
+      body.className = 'assist-body'
+      var markdown = document.createElement('div')
+      markdown.className = 'markdown'
+      if (!options.streaming) markdown.setAttribute('data-text-interaction-source', '')
+      markdown.innerHTML = api.renderUserMarkdown(options.markdown)
+      if (options.literalHtml) {
         var paragraph = document.createElement('p')
-        paragraph.textContent = literalHtml
-        body.appendChild(paragraph)
+        paragraph.textContent = options.literalHtml
+        markdown.appendChild(paragraph)
       }
-      flow.appendChild(body)
-      return { flow: flow, body: body }
+      body.appendChild(markdown)
+      if (options.reasoning) {
+        var think = document.createElement('div')
+        think.className = 'fake-think'
+        think.setAttribute('data-variant', 'think')
+        think.textContent = options.reasoning
+        body.appendChild(think)
+      }
+      root.appendChild(body)
+      anchor.appendChild(root)
+      flow.appendChild(anchor)
+      return { flow: flow, root: root, body: body, markdown: markdown }
     }
 
+    sectionLabel('用户消息（右对齐气泡 · 发送侧 Markdown）')
     stage.appendChild(userRow([
       '### 用户发送的消息',
       '',
@@ -186,6 +220,12 @@
       '```',
     ].join('\n')))
 
+    sectionLabel('助手消息 · 流式态（无 data-text-interaction-source，气泡已存在）')
+    stage.appendChild(assistantRow({
+      streaming: true,
+      markdown: '正在流式输出…… **气泡在流式期间就应出现**，落定后再把字面 HTML 解析成真实元素。',
+    }).flow)
+
     var wideTable = [
       '| 目标 | 判据 | 状态 | 风险 | 备注 |',
       '| --- | --- | --- | --- | --- |',
@@ -194,20 +234,26 @@
       '| g-001 | XSS 防护 | 通过 | 低 | 32 payload |',
     ].join('\n')
 
-    var assistant = assistantRow([
-      '### 助手回复（接收侧保留原生渲染）',
-      '',
-      '原生 GFM、表格、KaTeX 与 Shiki 不动；这里只把「显示为字面文本的 HTML」替换成真实元素：',
-      '',
-      wideTable,
-      '',
-      '```javascript',
-      'const safe = DOMPurify.sanitize(html, ALLOWLIST)',
-      '```',
-    ].join('\n'), '内嵌 HTML：<details open><summary>展开查看</summary><b>加粗</b>、<kbd>Ctrl</kbd>+<kbd>C</kbd>、<mark>高亮</mark> 都会渲染为真实元素。</details>')
-    stage.appendChild(assistant.flow)
-    api.createPatcher({}).scan(assistant.body)
+    sectionLabel('助手消息 · 落定态（气泡含思考块；字面 HTML 已替换为真实元素）')
+    var settled = assistantRow({
+      reasoning: '思考块：气泡包含 reasoning 子块，但仍跳过 HTML 解析。',
+      markdown: [
+        '### 助手回复（接收侧保留原生渲染）',
+        '',
+        '原生 GFM、表格、KaTeX 与 Shiki 不动；这里只把「显示为字面文本的 HTML」替换成真实元素：',
+        '',
+        wideTable,
+        '',
+        '```javascript',
+        'const safe = DOMPurify.sanitize(html, ALLOWLIST)',
+        '```',
+      ].join('\n'),
+      literalHtml: '内嵌 HTML：<details open><summary>展开查看</summary><b>加粗</b>、<kbd>Ctrl</kbd>+<kbd>C</kbd>、<mark>高亮</mark> 都会渲染为真实元素。</details>',
+    })
+    stage.appendChild(settled.flow)
+    api.createPatcher({}).scan(settled.markdown)
 
+    sectionLabel('既有 UI · 不应被插件改动')
     var toolFlow = document.createElement('div')
     toolFlow.setAttribute('data-chat-flow-kind', 'tool-call')
     toolFlow.className = 'flow-row'
@@ -217,7 +263,7 @@
     var think = document.createElement('div')
     think.className = 'flow-row fake-think'
     think.setAttribute('data-variant', 'think')
-    think.textContent = '思考块：插件跳过 [data-variant="think"]，其中 HTML 不解析。'
+    think.textContent = '思考块 [data-variant="think"]：插件跳过，其中 HTML 不解析。'
     stage.appendChild(think)
   }())
 </script>
