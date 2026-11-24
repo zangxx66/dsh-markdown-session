@@ -63,7 +63,8 @@ marked.parse(text, { gfm: true })  →  DOMPurify.sanitize(html, 白名单)  →
 
 - 助手气泡锚在 **AssistantMarkdown 根 div**：`[data-chat-flow-kind="assistant-step"] > [data-slot="conversation.chat.node"] > div`（行 → slot 锚点 → 消息根）。该根在流式（`data-streaming`）与历史中间 step 上同样存在，所以气泡不等落定；气泡因此同时包住 reasoning / images 子块。
 - 不向 `[data-chat-flow-kind]` 行容器注入任何布局属性（行不是 flex 容器）：用户右对齐来自上游 `.userRow{align-items:flex-end}`，助手左对齐来自 `.body{flex-direction:column}` + 根 div 的 `width:fit-content`。
-- **只有存在可见正文才出气泡**：`root div:has(> body > :not([hidden]):not([data-turn-process-inline]):not(:empty))`，并排除 `data-chat-group-part="reasoning"` 分区行。只有折叠思考、或只有 tool-call（body 为空）的 step 不会出现空气泡；流式期间一旦有正文仍立即出气泡。
+- **布局稳定化（流式跟随修复）**：气泡的几何（`padding:12px 16px`、`border` 宽度、`width:fit-content`、`max-width`、`box-sizing`、圆角）**恒定**挂在消息根上，与内容状态无关；只有 `background` / `border-color` 由内容条件化。流式内容从「无」到「有正文」时行高只增长内容高度，不再出现 padding/border/折行宽度造成的阶跃 —— 上游 `use-chat-reading` 会把尺寸突变触发的浏览器 scroll anchoring 补偿误判成读者滚动，挂起采样并停掉 `followingTail`，视图就会停在上一条回复。
+- **只有存在可见内容才出气泡**：`root div:has(> body > *:not([hidden]):not(:empty))`（含可见 reasoning / 过程包装），并排除 `data-chat-group-part="reasoning"` 分区行。折叠思考、空 body（仅 tool-call）的 step 只有透明的恒定几何、没有可见气泡；流式期间一旦有正文或可见 reasoning 立即显形。
 - 不设 `transform`、不给气泡根设 `overflow:hidden`，避免破坏 sticky 代码 banner；`.body` 的 16px gap 与折叠隐藏行为保持不变。
 - 颜色取 `--dsw-alias-markdown-code-block`、`--dsw-alias-label-primary` 等主题变量，浅/深色自动适配。
 - 表格统一边框 + 斑马纹（用户侧、内嵌 HTML、助手原生表格）。
@@ -85,7 +86,7 @@ npm test        # 构建 + node:test（单元 + 真浏览器 E2E）
 ```
 
 - `test/unit.test.mjs`：GFM 结构、管线顺序、白名单配置、URL 策略、apply/dispose、组件输出、bundle 形态。
-- `test/browser.test.mjs`：无头 Chrome（`DSH_CHROME_PATH` 可覆盖路径；找不到时跳过）加载 `test/fixtures/harness.html`，验证 30+ XSS payload 零执行、**跨文本节点混合 HTML（details+summary+kbd+md 加粗）**替换与逐字还原、**流式态/落定态两种气泡**、**折叠思考/空 body 不出空气泡**、气泡对比度（WCAG ≥4.5）、宽表滚动、行容器布局不被注入、工具卡/按钮负向回归，并生成浅/深色视觉截图。
+- `test/browser.test.mjs`：无头 Chrome（`DSH_CHROME_PATH` 可覆盖路径；找不到时跳过）加载 `test/fixtures/harness.html`，验证 30+ XSS payload 零执行、**跨文本节点混合 HTML（details+summary+kbd+md 加粗）**替换与逐字还原、**流式态/落定态两种气泡**、**折叠思考/空 body 不出可见气泡但几何恒定**、**可见 reasoning 已显形**、**布局稳定化（无内容→有正文时 padding/border 不变、高度增量仅来自内容）**、气泡对比度（WCAG ≥4.5）、宽表滚动、行容器布局不被注入、工具卡/按钮负向回归，并生成浅/深色视觉截图。
 - `node scripts/build.mjs`：把 `vendor/marked.umd.cjs`、`vendor/purify.cjs.js` 与 `lib/markdown-session.cjs` 内联成 classic script `client.js`（浏览器官网只共享 11 个静态模块，loader 不解析 bare 包；只有 `react` 走宿主静态表）。
 
 ### 已知限制

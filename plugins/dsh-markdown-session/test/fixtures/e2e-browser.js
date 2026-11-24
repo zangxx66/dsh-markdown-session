@@ -534,6 +534,7 @@
     })
 
     var reasoningHiddenRow = buildAssistantRow({ reasoningOnly: true, hidden: true })
+    var reasoningVisibleRow = buildAssistantRow({ reasoningOnly: true })
     var emptyStreamingRow = buildAssistantRow({ streaming: true, empty: true })
     var groupReasoningRow = buildAssistantRow({ textInteractionSource: true, markdown: '分区正文 **不应有气泡**', groupPart: 'reasoning' })
 
@@ -553,7 +554,7 @@
 
     stage.append(
       userFlow, settled.flow, streaming.flow, toolFlow, thinkFlow,
-      reasoningHiddenRow.flow, emptyStreamingRow.flow, groupReasoningRow.flow,
+      reasoningHiddenRow.flow, reasoningVisibleRow.flow, emptyStreamingRow.flow, groupReasoningRow.flow,
     )
 
     var button = toolFlow.querySelector('button')
@@ -606,20 +607,97 @@
       assert(streaming.markdown.textContent.indexOf('<b>暂不处理</b>') >= 0, '流式字面 HTML 文本被改')
     })
 
-    await check('气泡/无可见正文不出空气泡（reasoning-only / 组分区 reasoning / 空流式）', function () {
+    await check('气泡/无可见内容不出可见气泡（reasoning-only / 空流式），但几何恒定', function () {
       var cases = [
         ['reasoning-hidden', reasoningHiddenRow.root],
         ['empty-streaming', emptyStreamingRow.root],
-        ['group-part-reasoning', groupReasoningRow.root],
       ]
       for (var index = 0; index < cases.length; index++) {
         var style = window.getComputedStyle(cases[index][1])
         var background = colorOf(style.backgroundColor)
-        assert(background === null || background.a === 0, cases[index][0] + ' 出现空气泡背景')
-        assertEqual(parseFloat(style.borderRadius), 0, cases[index][0] + ' 出现气泡圆角')
-        assertEqual(parseFloat(style.paddingLeft), 0, cases[index][0] + ' 出现气泡内边距')
+        assert(background === null || background.a === 0, cases[index][0] + ' 出现可见气泡背景')
+        // border-style:none 或透明边框色都算「没有可见边框」（旧实现是 none，稳定化后是 transparent）。
+        var borderVisible = style.borderTopStyle !== 'none'
+          && (colorOf(style.borderTopColor) || { a: 0 }).a > 0
+        assertEqual(borderVisible, false, cases[index][0] + ' 出现可见气泡边框')
+        // 布局稳定化：几何（padding/border 宽度/圆角）恒定存在，只是透明，不随内容状态启停。
+        assertEqual(style.paddingTop, '12px', cases[index][0] + ' 气泡纵向内边距不恒定')
+        assertEqual(style.paddingLeft, '16px', cases[index][0] + ' 气泡横向内边距不恒定')
+        assertEqual(style.borderTopWidth, '1px', cases[index][0] + ' 气泡边框宽度不恒定')
+        assertEqual(style.boxSizing, 'border-box', cases[index][0] + ' 气泡盒模型不恒定')
+        assert(parseFloat(style.borderRadius) > 0, cases[index][0] + ' 气泡圆角不恒定')
       }
       // 对照组：同一结构里只要有可见 MarkdownText 正文就必须有气泡（已在流式/落定断言里覆盖）。
+    })
+
+    await check('气泡/可见 reasoning 时气泡存在（思考中已显形，正文到来不再切换）', function () {
+      var style = window.getComputedStyle(reasoningVisibleRow.root)
+      var background = colorOf(style.backgroundColor)
+      assert(background !== null && background.a > 0, '可见 reasoning 未出现气泡背景')
+      var border = colorOf(style.borderTopColor)
+      assert(border !== null && border.a > 0, '可见 reasoning 未出现气泡边框')
+      assertEqual(window.getComputedStyle(reasoningVisibleRow.reasoningWrapper).display !== 'none', true, 'reasoning wrapper 应可见')
+    })
+
+    await check('气泡/reasoning 分区行不出气泡，也不承担气泡几何', function () {
+      var style = window.getComputedStyle(groupReasoningRow.root)
+      var background = colorOf(style.backgroundColor)
+      assert(background === null || background.a === 0, 'reasoning 分区行出现气泡背景')
+      // 分区行连恒定几何都不承担：border-style 仍是 none（不会被裁成气泡外壳）。
+      assertEqual(style.borderTopStyle, 'none', 'reasoning 分区行出现气泡边框')
+      assertEqual(parseFloat(style.paddingLeft), 0, 'reasoning 分区行被注入了气泡内边距')
+      assertEqual(parseFloat(style.borderRadius), 0, 'reasoning 分区行被注入了气泡圆角')
+    })
+
+    await check('气泡/布局稳定化：无内容→有正文，padding/border 恒定，高度增量仅来自内容', function () {
+      var flow = el('div', { 'data-chat-flow-kind': 'assistant-step' })
+      var anchor = el('div', { 'data-slot': 'conversation.chat.node' })
+      var root = el('div', { class: 'assist-root', 'data-streaming': '' })
+      var body = el('div', { class: 'assist-body' })
+      var markdown = el('div', { class: 'markdown' })
+      body.appendChild(markdown)
+      root.appendChild(body)
+      anchor.appendChild(root)
+      flow.appendChild(anchor)
+      stage.appendChild(flow)
+
+      var emptyStyle = window.getComputedStyle(root)
+      var empty = {
+        height: root.offsetHeight,
+        padding: emptyStyle.padding,
+        borderWidth: emptyStyle.borderTopWidth,
+        borderRadius: emptyStyle.borderRadius,
+        maxWidth: emptyStyle.maxWidth,
+        boxSizing: emptyStyle.boxSizing,
+        backgroundAlpha: (colorOf(emptyStyle.backgroundColor) || { a: 0 }).a,
+      }
+      assertEqual(empty.backgroundAlpha, 0, '空内容态出现了可见气泡背景')
+
+      // 内容从「无」到「有」：正文是流式逐步到来的最小近似（先一段，再折行到多段）。
+      markdown.innerHTML = api.renderUserMarkdown('第一段正文。\n\n第二段正文，长到足以触发折行，用来验证宽度/内边距不随内容状态切换。')
+      var filledStyle = window.getComputedStyle(root)
+      var filled = {
+        height: root.offsetHeight,
+        padding: filledStyle.padding,
+        borderWidth: filledStyle.borderTopWidth,
+        borderRadius: filledStyle.borderRadius,
+        maxWidth: filledStyle.maxWidth,
+        boxSizing: filledStyle.boxSizing,
+        backgroundAlpha: (colorOf(filledStyle.backgroundColor) || { a: 0 }).a,
+      }
+      assertEqual(filled.padding, empty.padding, 'padding 随内容状态变化（会造成流式行高突变）')
+      assertEqual(filled.borderWidth, empty.borderWidth, 'border 宽度随内容状态变化')
+      assertEqual(filled.borderRadius, empty.borderRadius, '圆角随内容状态变化')
+      assertEqual(filled.maxWidth, empty.maxWidth, 'max-width 随内容状态变化')
+      assertEqual(filled.boxSizing, empty.boxSizing, 'box-sizing 随内容状态变化')
+      assert(filled.backgroundAlpha > 0, '有正文后气泡未显形')
+      assert(filled.height > empty.height, '有正文后行高未增长')
+      var contentHeight = markdown.offsetHeight
+      assert(Math.abs((filled.height - empty.height) - contentHeight) <= 1,
+        '高度增量不等于内容高度：Δ=' + (filled.height - empty.height) + ' 内容=' + contentHeight)
+      // 气泡不再从「满宽」收缩到 86%：宽度从行创建起就由 fit-content + max-width 决定。
+      assert(root.offsetWidth <= stage.clientWidth, '气泡宽度超出容器：' + root.offsetWidth + ' > ' + stage.clientWidth)
+      flow.remove()
     })
 
     await check('气泡/落定态：外壳在消息根而不是 Markdown 根', function () {

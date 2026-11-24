@@ -193,7 +193,9 @@
         var inner = document.createElement('div')
         inner.className = 'fake-think'
         inner.setAttribute('data-variant', 'think')
-        inner.textContent = '思考中…（折叠/隐藏时没有可见正文）'
+        inner.textContent = options.hidden
+          ? '思考中…（折叠/隐藏时没有可见正文）'
+          : '思考中……（可见 reasoning 已让气泡显形；正文到来时几何不再变化）'
         wrapper.appendChild(inner)
         body.appendChild(wrapper)
         root.appendChild(body)
@@ -250,11 +252,14 @@
       markdown: '正在流式输出…… **气泡在流式期间就应出现**，落定后再把字面 HTML 解析成真实元素。',
     }).flow)
 
+    sectionLabel('助手消息 · 思考中（可见 reasoning：气泡已存在，正文到来不再二次跳变）')
+    stage.appendChild(assistantRow({ reasoningOnly: true }).flow)
+
     sectionLabel('助手消息 · 思考折叠中（只有隐藏 reasoning：不应出现空气泡）')
     stage.appendChild(assistantRow({ reasoningOnly: true, hidden: true }).flow)
     var airNote = document.createElement('div')
     airNote.className = 'fixture-note'
-    airNote.textContent = '↑ 折叠态只有隐藏的 reasoning 包装，没有可见正文 → 气泡不生效；修复前这里会出现一个约 80px 的空圆角气泡。'
+    airNote.textContent = '↑ 折叠态只有隐藏的 reasoning 包装，没有可见内容 → 气泡不显形（无背景/无可见边框）；恒定几何仍在（透明 padding/border），所以正文到来时行高只增长内容高度，不再跳变。'
     stage.appendChild(airNote)
 
     var wideTable = [

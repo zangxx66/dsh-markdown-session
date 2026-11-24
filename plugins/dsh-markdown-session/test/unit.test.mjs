@@ -364,15 +364,27 @@ test('无 slots 的上下文不抛错，返回幂等 dispose', () => {
 test('气泡锚点是消息节点根：流式与历史 step 都有外壳，且不向行容器注入无效布局', () => {
   const { session } = createSession()
   const css = session.CSS
-  // 气泡必须锚在 AssistantMarkdown 根 div（行 → slot 锚 → 根 div），不能锚在 settled 才有的属性上。
-  assert.ok(css.includes('[data-chat-flow-kind="assistant-step"]:not([data-chat-group-part="reasoning"]) > [data-slot="conversation.chat.node"] > div:has('), '气泡未锚到消息根 div')
-  const bubbleRule = css.split('\n').find((line) => line.includes('[data-slot="conversation.chat.node"] > div:has('))
-  assert.ok(bubbleRule, '找不到气泡规则')
-  assert.equal(bubbleRule.includes('[data-text-interaction-source]'), false, '气泡规则不得依赖 settled 属性')
-  assert.ok(bubbleRule.includes('border-radius') && bubbleRule.includes('background'), '气泡缺少圆角/背景')
-  assert.ok(bubbleRule.includes(':has(> div > *:not([hidden]):not([data-turn-process-inline]):not(:empty))'), '气泡缺少「可见正文」条件')
-  assert.equal(bubbleRule.includes(':has(:has'), false, '不得嵌套 :has（Chrome 会判整条非法）')
-  assert.ok(bubbleRule.includes(':not([data-chat-group-part="reasoning"])'), '气泡未排除 reasoning 分区行')
+  const scope = '[data-chat-flow-kind="assistant-step"]:not([data-chat-group-part="reasoning"]) > [data-slot="conversation.chat.node"] > div'
+  const rules = css.split('\n')
+  // 布局稳定化：几何（padding/border 宽度/width/圆角）恒定在消息根上，与内容状态无关。
+  const geometryRule = rules.find((line) => line.includes(scope + '{'))
+  assert.ok(geometryRule, '找不到恒定几何规则')
+  assert.equal(geometryRule.includes(':has('), false, '几何规则不得依赖内容状态（:has 会让流式行高突变）')
+  for (const declaration of ['box-sizing:border-box', 'width:fit-content', 'max-width:', 'padding:12px 16px', 'border:1px solid', 'border-radius:']) {
+    assert.ok(geometryRule.includes(declaration), '恒定几何缺少 ' + declaration)
+  }
+  assert.ok(geometryRule.includes('[data-chat-group-part="reasoning"]'), '几何规则未排除 reasoning 分区行')
+  // 视觉显形只看「body 里有任意可见内容」（含可见 reasoning / 过程包装），并且只改视觉属性。
+  const visualRule = rules.find((line) => line.includes(scope + ':has('))
+  assert.ok(visualRule, '找不到气泡视觉规则')
+  assert.equal(visualRule.includes('[data-text-interaction-source]'), false, '气泡规则不得依赖 settled 属性')
+  assert.ok(visualRule.includes(':has(> div > *:not([hidden]):not(:empty))'), '气泡缺少「有任意可见内容」条件')
+  assert.ok(visualRule.includes('background:') && visualRule.includes('border-color:'), '气泡缺少背景/边框色')
+  for (const pureVisual of ['padding:', 'box-sizing', 'border-width', 'border:1px', 'width:fit-content', 'max-width:', 'border-radius:']) {
+    assert.equal(visualRule.includes(pureVisual), false, '视觉规则混入了会改变几何的 ' + pureVisual)
+  }
+  assert.ok(visualRule.includes(':not([data-chat-group-part="reasoning"])'), '视觉规则未排除 reasoning 分区行')
+  assert.equal(css.includes(':has(:has'), false, '不得嵌套 :has（Chrome 会判整条非法）')
   // 行容器不是 flex 容器：不得对 [data-chat-flow-kind] 注入布局属性。
   assert.equal(css.includes('justify-content'), false, '不得向行容器注入 justify-content')
   assert.equal(/\[data-chat-flow-kind="(user|assistant-step)"\]\{/.test(css), false, '不得直接改行容器布局')

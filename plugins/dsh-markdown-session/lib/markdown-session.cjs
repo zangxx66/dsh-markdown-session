@@ -891,10 +891,24 @@
        （display:contents）→ AssistantNodeView/AssistantMarkdown 唯一根 div。
        该根 div 在流式（data-streaming）与历史中间 step 上同样存在，因此气泡不再依赖
        「settled 才置位」的 [data-text-interaction-source]；后处理仍只看 settled。
-       同时用 :has() 要求「body 里有非 hidden、非折叠包装、非空的可见正文」，
-       避免只有折叠思考/仅 tool-call 的 step 出现空气泡；reasoning 分区行也排除。
+
+       【布局稳定化（流式跟随修复）】规则拆成两条：
+       ①「几何恒定」—— box-sizing / width / max-width / padding / border 宽度 / 圆角
+         永远挂在非 reasoning 分区的 assistant-step 消息根上，与内容状态无关；
+       ②「视觉条件化」—— 只有 background / border-color 由 :has() 判定。
+       为什么必须拆：流式期间「无内容 → 有正文」会让原先单条 :has() 规则整条启停，
+       气泡的 padding(12px 16px) + border(1px) + width:fit-content(86% 上限) 同时出现，
+       行高（含折行宽度变化）产生阶跃。上游 use-chat-viewport/use-chat-reading 把
+       非读者原因的 scrollTop 变化（浏览器 scroll anchoring 对尺寸突变的补偿）判成
+       movedByReader，于是挂起 500ms 采样、期间 onResize 直接 return（不再跟随），
+       500ms 后 sample() 以 nearBottom(|floor-top| <= 25px) 重算即 followingTail=false。
+       几何恒定后突变消失，跟随意图不再被误判掉。
+       条件改为「body 里有任意可见内容」（含可见 reasoning / 过程包装；不再排除
+       data-turn-process-inline），全部 hidden/空（空 step、仅 tool-call、仅折叠 thinking）
+       时只有透明的恒定几何、没有可见气泡；reasoning 分区行照旧排除。
        （不嵌套 :has：CSS 规范禁止 :has() 出现在 :has() 参数内，Chrome 会整条判定非法。） ---- */
-    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"]:not([data-chat-group-part="reasoning"]) > [data-slot="conversation.chat.node"] > div:has(> div > *:not([hidden]):not([data-turn-process-inline]):not(:empty)){box-sizing:border-box;align-self:flex-start;width:fit-content;max-width:min(calc(var(--dsh-chat-content-width,748px) * 0.86),100%);padding:12px 16px;border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-markdown-code-block);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}',
+    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"]:not([data-chat-group-part="reasoning"]) > [data-slot="conversation.chat.node"] > div{box-sizing:border-box;align-self:flex-start;width:fit-content;max-width:min(calc(var(--dsh-chat-content-width,748px) * 0.86),100%);padding:12px 16px;border:1px solid transparent;border-radius:var(--dsw-radius-xl,20px);color:var(--dsw-alias-label-primary)}',
+    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"]:not([data-chat-group-part="reasoning"]) > [data-slot="conversation.chat.node"] > div:has(> div > *:not([hidden]):not(:empty)){background:var(--dsw-alias-markdown-code-block);border-color:var(--dsw-alias-border-l1)}',
     /* 宽表破栏依赖 100cqw 与内容列宽；气泡内改为气泡内滚动（判据 9），流式/落定都生效。 */
     'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"] > [data-slot="conversation.chat.node"] > div .md-table-wide{width:100%!important;max-width:100%!important;overflow-x:auto!important;margin-left:0!important;padding-left:0!important}',
   ].join('\n')
