@@ -176,6 +176,7 @@
       var flow = document.createElement('div')
       flow.setAttribute('data-chat-flow-kind', 'assistant-step')
       flow.className = 'flow-row'
+      if (options.groupPart) flow.setAttribute('data-chat-group-part', options.groupPart)
       var anchor = document.createElement('div')
       anchor.setAttribute('data-slot', 'conversation.chat.node')
       var root = document.createElement('div')
@@ -183,6 +184,23 @@
       if (options.streaming) root.setAttribute('data-streaming', '')
       var body = document.createElement('div')
       body.className = 'assist-body'
+      if (options.reasoningOnly) {
+        var wrapper = document.createElement('div')
+        if (options.hidden) {
+          wrapper.setAttribute('data-turn-process-inline', '')
+          wrapper.setAttribute('hidden', '')
+        }
+        var inner = document.createElement('div')
+        inner.className = 'fake-think'
+        inner.setAttribute('data-variant', 'think')
+        inner.textContent = '思考中…（折叠/隐藏时没有可见正文）'
+        wrapper.appendChild(inner)
+        body.appendChild(wrapper)
+        root.appendChild(body)
+        anchor.appendChild(root)
+        flow.appendChild(anchor)
+        return { flow: flow, root: root, body: body, markdown: null }
+      }
       var markdown = document.createElement('div')
       markdown.className = 'markdown'
       if (!options.streaming) markdown.setAttribute('data-text-interaction-source', '')
@@ -194,11 +212,17 @@
       }
       body.appendChild(markdown)
       if (options.reasoning) {
+        var reasoningWrapper = document.createElement('div')
+        if (options.reasoningHidden) {
+          reasoningWrapper.setAttribute('data-turn-process-inline', '')
+          reasoningWrapper.setAttribute('hidden', '')
+        }
         var think = document.createElement('div')
         think.className = 'fake-think'
         think.setAttribute('data-variant', 'think')
         think.textContent = options.reasoning
-        body.appendChild(think)
+        reasoningWrapper.appendChild(think)
+        body.appendChild(reasoningWrapper)
       }
       root.appendChild(body)
       anchor.appendChild(root)
@@ -226,6 +250,13 @@
       markdown: '正在流式输出…… **气泡在流式期间就应出现**，落定后再把字面 HTML 解析成真实元素。',
     }).flow)
 
+    sectionLabel('助手消息 · 思考折叠中（只有隐藏 reasoning：不应出现空气泡）')
+    stage.appendChild(assistantRow({ reasoningOnly: true, hidden: true }).flow)
+    var airNote = document.createElement('div')
+    airNote.className = 'fixture-note'
+    airNote.textContent = '↑ 折叠态只有隐藏的 reasoning 包装，没有可见正文 → 气泡不生效；修复前这里会出现一个约 80px 的空圆角气泡。'
+    stage.appendChild(airNote)
+
     var wideTable = [
       '| 目标 | 判据 | 状态 | 风险 | 备注 |',
       '| --- | --- | --- | --- | --- |',
@@ -234,7 +265,7 @@
       '| g-001 | XSS 防护 | 通过 | 低 | 32 payload |',
     ].join('\n')
 
-    sectionLabel('助手消息 · 落定态（气泡含思考块；字面 HTML 已替换为真实元素）')
+    sectionLabel('助手消息 · 落定态（气泡含思考块；字面 HTML 已替换，含跨文本节点合并）')
     var settled = assistantRow({
       reasoning: '思考块：气泡包含 reasoning 子块，但仍跳过 HTML 解析。',
       markdown: [
@@ -248,8 +279,22 @@
         'const safe = DOMPurify.sanitize(html, ALLOWLIST)',
         '```',
       ].join('\n'),
-      literalHtml: '内嵌 HTML：<details open><summary>展开查看</summary><b>加粗</b>、<kbd>Ctrl</kbd>+<kbd>C</kbd>、<mark>高亮</mark> 都会渲染为真实元素。</details>',
     })
+    // 复刻真机：上游把一段 raw HTML 拆成多个相邻文本节点，中间隔着 md 渲染的 <strong>。
+    var splitParagraph = document.createElement('p')
+    var pieces = [
+      '跨文本节点混合 HTML：测试组：', '<details open>', '<summary>', '标题文本', '</summary>',
+      '正文有 ', '<kbd>', 'Ctrl', '</kbd>+', '<kbd>', 'V', '</kbd> 与 ',
+    ]
+    for (var pieceIndex = 0; pieceIndex < pieces.length; pieceIndex++) {
+      splitParagraph.appendChild(document.createTextNode(pieces[pieceIndex]))
+    }
+    var boldNode = document.createElement('strong')
+    boldNode.textContent = '加粗'
+    splitParagraph.appendChild(boldNode)
+    splitParagraph.appendChild(document.createTextNode('。'))
+    splitParagraph.appendChild(document.createTextNode('</details>'))
+    settled.markdown.appendChild(splitParagraph)
     stage.appendChild(settled.flow)
     api.createPatcher({}).scan(settled.markdown)
 

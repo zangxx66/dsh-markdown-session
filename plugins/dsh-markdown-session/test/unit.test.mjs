@@ -290,6 +290,17 @@ test('hasWhitelistTag 只对白名单标签返回 true，普通文本/非白名�
   assert.equal(session.hasWhitelistTag(''), false)
 })
 
+test('isBalancedHtml 用于判断跨节点 HTML 是否需要拼接/放弃', () => {
+  const { session } = createSession()
+  assert.equal(session.isBalancedHtml('<details><summary>标题</summary>正文'), false, '未闭合 details 应判为不平衡')
+  assert.equal(session.isBalancedHtml('<details><summary>标题</summary>正文</details>'), true)
+  assert.equal(session.isBalancedHtml('<kbd>Ctrl</kbd>+<kbd>V</kbd>'), true)
+  assert.equal(session.isBalancedHtml('<br><img src="x"><hr>'), true, 'void 标签不应被当成未闭合')
+  assert.equal(session.isBalancedHtml('<b>未闭合'), false)
+  assert.equal(session.isBalancedHtml('纯文本 1 < 2 与 3 > 2'), true)
+  assert.equal(session.isBalancedHtml('</summary>游离闭合'), true, '游离闭合标签不产生结构')
+})
+
 test('escapeHtml 覆盖五种字符', () => {
   const { session } = createSession()
   assert.equal(session.escapeHtml('<a href="x">&\'</a>'), '&lt;a href=&quot;x&quot;&gt;&amp;&#39;&lt;/a&gt;')
@@ -354,11 +365,14 @@ test('气泡锚点是消息节点根：流式与历史 step 都有外壳，且�
   const { session } = createSession()
   const css = session.CSS
   // 气泡必须锚在 AssistantMarkdown 根 div（行 → slot 锚 → 根 div），不能锚在 settled 才有的属性上。
-  assert.ok(css.includes('[data-chat-flow-kind="assistant-step"] > [data-slot="conversation.chat.node"] > div{'), '气泡未锚到消息根 div')
-  const bubbleRule = css.split('\n').find((line) => line.includes('[data-chat-flow-kind="assistant-step"] > [data-slot="conversation.chat.node"] > div{'))
+  assert.ok(css.includes('[data-chat-flow-kind="assistant-step"]:not([data-chat-group-part="reasoning"]) > [data-slot="conversation.chat.node"] > div:has('), '气泡未锚到消息根 div')
+  const bubbleRule = css.split('\n').find((line) => line.includes('[data-slot="conversation.chat.node"] > div:has('))
   assert.ok(bubbleRule, '找不到气泡规则')
   assert.equal(bubbleRule.includes('[data-text-interaction-source]'), false, '气泡规则不得依赖 settled 属性')
   assert.ok(bubbleRule.includes('border-radius') && bubbleRule.includes('background'), '气泡缺少圆角/背景')
+  assert.ok(bubbleRule.includes(':has(> div > *:not([hidden]):not([data-turn-process-inline]):not(:empty))'), '气泡缺少「可见正文」条件')
+  assert.equal(bubbleRule.includes(':has(:has'), false, '不得嵌套 :has（Chrome 会判整条非法）')
+  assert.ok(bubbleRule.includes(':not([data-chat-group-part="reasoning"])'), '气泡未排除 reasoning 分区行')
   // 行容器不是 flex 容器：不得对 [data-chat-flow-kind] 注入布局属性。
   assert.equal(css.includes('justify-content'), false, '不得向行容器注入 justify-content')
   assert.equal(/\[data-chat-flow-kind="(user|assistant-step)"\]\{/.test(css), false, '不得直接改行容器布局')

@@ -1,7 +1,7 @@
 /**
  * dsh-markdown-session — 浏览器半边（GENERATED FILE，勿手改）。
  * 由 scripts/build.mjs 生成：marked 16.4.2 (MIT) + DOMPurify 3.4.17 (Apache-2.0/MPL-2.0) 内联。
- * vendor 指纹：marked=d6d1c8f0d60fec5e purify=b70f3f13df45539c core=05f2db964794ab60。
+ * vendor 指纹：marked=d6d1c8f0d60fec5e purify=b70f3f13df45539c core=7076b6e6f5d3b6bc。
  * 许可证：见 vendor/marked.LICENSE.md、vendor/purify.LICENSE 与 README「第三方」小节。
  */
 window.__ModuleLoader__.load({
@@ -2918,100 +2918,252 @@ module.exports = purify_default;
 
     /* ---------------- 助手消息：字面 HTML 后处理 ---------------- */
 
-    /** 收集 root 下「含有白名单标签字面文本」的文本节点，跳过受保护子树。 */
-    function collectHtmlTextNodes(root) {
-      var out = []
-      if (root === null || root === undefined) return out
-      var stack = [root]
+    var VOID_TAGS = {
+      BR: 1, IMG: 1, HR: 1, WBR: 1, INPUT: 1, META: 1, LINK: 1, SOURCE: 1,
+      AREA: 1, BASE: 1, COL: 1, EMBED: 1, PARAM: 1, TRACK: 1,
+    }
+    var HTML_TOKEN_RE = /<!--[\s\S]*?-->|<\s*\/\s*([a-z][a-z0-9-]*)\s*>|<\s*([a-z][a-z0-9-]*)(?:\s[^<>]*?)?\/?>/gi
+
+    /**
+     * 字面 HTML 是否「闭合完整」（标签栈为空）。
+     * 不平衡说明一个 HTML 块被上游 MarkdownText 拆到了后续兄弟节点：例如
+     * `<details><summary>标题</summary>` 在一个文本节点、`</details>` 在若干文本节点/元素之后。
+     * 只有先跨节点拼接成完整 HTML，才能避免「空壳 details + 游离 </details>」的错位结构。
+     * @param text - 字面 HTML 文本
+     * @returns 是否所有打开标签都已闭合
+     */
+    function isBalancedHtml(text) {
+      var stack = []
+      var source = String(text == null ? '' : text)
+      HTML_TOKEN_RE.lastIndex = 0
+      var match
+      while ((match = HTML_TOKEN_RE.exec(source)) !== null) {
+        if (match[0].slice(0, 4) === '<!--') continue
+        if (match[1] !== undefined) {
+          var close = match[1].toLowerCase()
+          if (stack.length > 0 && stack[stack.length - 1] === close) stack.pop()
+          // 游离闭合标签不产生结构，忽略（若不完整会在拼接后重新评估）。
+          continue
+        }
+        var tag = match[2].toLowerCase()
+        if (VOID_TAGS[tag.toUpperCase()] === 1 || /\/\s*>$/.test(match[0])) continue
+        stack.push(tag)
+      }
+      return stack.length === 0
+    }
+
+    /** 受保护元素：不进入文本段、也不能被跨节点拼接吸收。 */
+    function isSkippedElement(node) {
+      if (node === null || node === undefined || node.nodeType !== 1) return false
+      if (node.hasAttribute && node.hasAttribute(MARK_ATTR)) return true
+      if (SKIP_TAGS[String(node.tagName || '').toUpperCase()] === 1) return true
+      var matches = node.matches || node.msMatchesSelector
+      if (typeof matches !== 'function') return false
+      try { return matches.call(node, SKIP_SELECTOR) === true } catch (error) { return false }
+    }
+
+    /** fragment 内是否包含某个文本 token。 */
+    function fragmentHasToken(fragment, token) {
+      if (fragment === null || fragment === undefined) return false
+      var stack = [fragment]
       while (stack.length > 0) {
         var node = stack.pop()
         if (node === null || node === undefined) continue
         if (node.nodeType === 3) {
-          if (hasWhitelistTag(node.nodeValue)) out.push(node)
+          if (String(node.nodeValue || '').indexOf(token) >= 0) return true
           continue
         }
-        if (node.nodeType !== 1) continue
-        if (node.hasAttribute && node.hasAttribute(MARK_ATTR)) continue
-        if (SKIP_TAGS[String(node.tagName || '').toUpperCase()] === 1) continue
-        var matches = node.matches || node.msMatchesSelector
-        if (typeof matches === 'function') {
-          var skipped = false
-          try { skipped = matches.call(node, SKIP_SELECTOR) } catch (error) { skipped = false }
-          if (skipped) continue
+        var children = node.childNodes
+        if (!children) continue
+        for (var index = 0; index < children.length; index++) stack.push(children[index])
+      }
+      return false
+    }
+
+    /**
+     * 把 token 文本替换成真实元素（跨元素边界拼接时使用）。
+     * 移动的是上游 React 已渲染的节点本身，因此节点身份与事件委托保持不变。
+     */
+    function stitchElement(fragment, token, element) {
+      if (fragment === null || fragment === undefined) return false
+      var stack = [fragment]
+      while (stack.length > 0) {
+        var node = stack.pop()
+        if (node === null || node === undefined) continue
+        if (node.nodeType === 3) {
+          var value = String(node.nodeValue || '')
+          var index = value.indexOf(token)
+          if (index < 0) continue
+          var parent = node.parentNode
+          if (parent === null || parent === undefined) continue
+          var after = node.splitText(index)
+          after.splitText(token.length)
+          parent.replaceChild(element, after)
+          return true
         }
         var children = node.childNodes
-        for (var index = children.length - 1; index >= 0; index--) stack.push(children[index])
+        if (!children) continue
+        for (var childIndex = 0; childIndex < children.length; childIndex++) stack.push(children[childIndex])
+      }
+      return false
+    }
+
+    /**
+     * 按父节点收集「相邻文本节点」文本段（兄弟间只允许隔注释，不隔元素）。
+     * 上游把一段 raw HTML 拆成多个相邻 DOM 文本节点时，只有合并后才有完整结构。
+     * @param root - 扫描根（assistant Markdown 文本根）
+     * @returns [{ parent, nodes }]，nodes 为文档顺序的相邻文本节点
+     */
+    function collectTextSegments(root) {
+      var out = []
+      if (root === null || root === undefined || root.nodeType !== 1) return out
+      var stack = [root]
+      while (stack.length > 0) {
+        var element = stack.pop()
+        if (element === null || element === undefined || element.nodeType !== 1) continue
+        if (isSkippedElement(element)) continue
+        var children = element.childNodes
+        var run = []
+        var descendants = []
+        var runHasTag = false
+        var flush = function () {
+          if (run.length > 0 && runHasTag) out.push({ parent: element, nodes: run })
+          run = []
+          runHasTag = false
+        }
+        for (var index = 0; index < children.length; index++) {
+          var child = children[index]
+          if (child.nodeType === 3) {
+            run.push(child)
+            if (!runHasTag && hasWhitelistTag(child.nodeValue)) runHasTag = true
+            continue
+          }
+          if (child.nodeType === 8) continue // 注释透明：不切断文本段，也不进入段
+          flush()
+          if (child.nodeType === 1) descendants.push(child)
+        }
+        flush()
+        for (var descendantIndex = descendants.length - 1; descendantIndex >= 0; descendantIndex--) {
+          stack.push(descendants[descendantIndex])
+        }
       }
       return out
     }
 
     /**
      * 创建一个「字面 HTML → 真实元素」的后处理器。
-     * scan(root) 就地替换；dispose() 逐条还原（卸载可逆）。
+     * 以「相邻文本段」为单位：段内若 HTML 不平衡（被上游拆到后续兄弟节点），
+     * 向后拼接兄弟文本/元素（元素用 token 占位，成功后把原节点接回），
+     * 直到标签闭合；无法闭合则整段放弃（宁可字面显示，不产出错位结构）。
      * 没有 sanitizer 时拒绝工作（绝不插入未清洗 HTML）。
      */
     function createPatcher(patcherOptions) {
       var sanitize = (patcherOptions && patcherOptions.sanitize) || sanitizeHtml
       var records = []
       var stats = { scanned: 0, replaced: 0, restored: 0 }
+      var tokenPrefix = '[[dsh-md-slot:' + Math.random().toString(36).slice(2, 10) + ':'
 
       function available() {
         return doc !== null && doc !== undefined && typeof sanitize === 'function' && typeof doc.createElement === 'function'
       }
 
-      function replaceTextNode(node) {
-        var text = String(node.nodeValue == null ? '' : node.nodeValue)
-        var parent = node.parentNode
-        if (parent === null || parent === undefined) return false
-        var probe = doc.createElement('template')
-        probe.innerHTML = text
-        var content = probe.content
-        if (content === null || content === undefined) return false
-        if (childElements(content).length === 0) return false
+      function replaceSegment(segment) {
+        var parent = segment.parent
+        var nodes = segment.nodes
+        if (parent === null || parent === undefined || nodes.length === 0) return false
+        var text = ''
+        for (var index = 0; index < nodes.length; index++) {
+          var node = nodes[index]
+          if (node.nodeType !== 3 || node.parentNode !== parent) return false
+          text += String(node.nodeValue == null ? '' : node.nodeValue)
+        }
+        if (!hasWhitelistTag(text)) return false
+
+        var html = text
+        var consumed = []
+        var extras = []
+        var balanced = isBalancedHtml(html)
+        var cursor = nodes[nodes.length - 1].nextSibling
+        var guard = 0
+        while (!balanced && cursor !== null && cursor !== undefined && guard < 2000) {
+          guard += 1
+          if (cursor.nodeType === 3) {
+            html += String(cursor.nodeValue == null ? '' : cursor.nodeValue)
+            consumed.push(cursor)
+          } else if (cursor.nodeType === 8) {
+            // 注释透明：不参与文本，也不切断跨节点拼接
+          } else if (cursor.nodeType === 1) {
+            if (isSkippedElement(cursor)) return false // 跨到受保护元素：整段放弃，保持字面
+            var token = tokenPrefix + extras.length + ']]'
+            html += token
+            extras.push({ token: token, element: cursor })
+            consumed.push(cursor)
+          } else {
+            return false
+          }
+          balanced = isBalancedHtml(html)
+          cursor = cursor.nextSibling
+        }
+        if (!balanced) return false // 无法完整解析：宁可字面显示
+
         var clean
         try {
-          clean = sanitize(text)
+          clean = sanitize(html)
         } catch (error) {
           return false
         }
         if (typeof clean !== 'string' || clean === '') return false
-        var fragmentHost = doc.createElement('template')
-        fragmentHost.innerHTML = clean
-        var fragment = fragmentHost.content
-        if (fragment === null || fragment === undefined || childElements(fragment).length === 0) return false
+        var host = doc.createElement('template')
+        host.innerHTML = clean
+        var fragment = host.content
+        if (fragment === null || fragment === undefined) return false
+        if (childElements(fragment).length === 0) return false
+
+        // token 预检先于任何 DOM 改动：清洗后 token 丢失就放弃整段。
+        for (var extraIndex = 0; extraIndex < extras.length; extraIndex++) {
+          if (!fragmentHasToken(fragment, extras[extraIndex].token)) return false
+        }
+        for (var stitchIndex = 0; stitchIndex < extras.length; stitchIndex++) {
+          if (!stitchElement(fragment, extras[stitchIndex].token, extras[stitchIndex].element)) return false
+        }
+
+        var originals = nodes.concat(consumed)
         var marker = doc.createComment('dsh-md-session:html')
-        var inserted = []
+        var insertedRoots = []
+        for (var fragmentIndex = 0; fragmentIndex < fragment.childNodes.length; fragmentIndex++) {
+          insertedRoots.push(fragment.childNodes[fragmentIndex])
+        }
         try {
-          parent.insertBefore(marker, node)
-          while (fragment.firstChild !== null) {
-            var child = fragment.firstChild
-            parent.insertBefore(child, node)
-            inserted.push(child)
-          }
-          parent.removeChild(node)
+          parent.insertBefore(marker, nodes[0])
+          parent.insertBefore(fragment, nodes[0])
         } catch (error) {
-          // 回滚本次半成品，保持原文本节点。
-          for (var rollback = 0; rollback < inserted.length; rollback++) {
-            try { if (inserted[rollback].parentNode === parent) parent.removeChild(inserted[rollback]) } catch (ignored) { /* 已移除 */ }
-          }
           try { if (marker.parentNode === parent) parent.removeChild(marker) } catch (ignored) { /* 已移除 */ }
           return false
         }
-        for (var mark = 0; mark < inserted.length; mark++) {
-          if (inserted[mark].nodeType === 1 && inserted[mark].setAttribute) inserted[mark].setAttribute(MARK_ATTR, '1')
+        for (var removeIndex = 0; removeIndex < originals.length; removeIndex++) {
+          var original = originals[removeIndex]
+          try { if (original.parentNode === parent) parent.removeChild(original) } catch (ignored) { /* 已移动 */ }
         }
-        records.push({ marker: marker, node: node, inserted: inserted })
+        var moved = []
+        for (var movedIndex = 0; movedIndex < extras.length; movedIndex++) moved.push(extras[movedIndex].element)
+        for (var markIndex = 0; markIndex < insertedRoots.length; markIndex++) {
+          var rootNode = insertedRoots[markIndex]
+          if (rootNode.nodeType === 1 && moved.indexOf(rootNode) === -1 && rootNode.setAttribute) {
+            rootNode.setAttribute(MARK_ATTR, '1')
+          }
+        }
+        records.push({ marker: marker, originals: originals, insertedRoots: insertedRoots })
         stats.replaced += 1
         return true
       }
 
       function scan(root) {
         if (!available()) return 0
-        var nodes = collectHtmlTextNodes(root)
-        stats.scanned += nodes.length
+        var segments = collectTextSegments(root)
+        stats.scanned += segments.length
         var count = 0
-        for (var index = 0; index < nodes.length; index++) {
-          if (replaceTextNode(nodes[index])) count += 1
+        for (var index = 0; index < segments.length; index++) {
+          if (replaceSegment(segments[index])) count += 1
         }
         return count
       }
@@ -3021,14 +3173,17 @@ module.exports = purify_default;
           var record = records[index]
           var parent = record.marker.parentNode
           if (parent === null || parent === undefined) continue
-          for (var item = 0; item < record.inserted.length; item++) {
-            try { if (record.inserted[item].parentNode === parent) parent.removeChild(record.inserted[item]) } catch (ignored) { /* 已移除 */ }
+          for (var item = 0; item < record.originals.length; item++) {
+            try { if (record.originals[item].parentNode) record.originals[item].parentNode.removeChild(record.originals[item]) } catch (ignored) { /* 已移除 */ }
           }
-          try {
-            parent.insertBefore(record.node, record.marker)
-            parent.removeChild(record.marker)
-            stats.restored += 1
-          } catch (ignored) { /* 位置已失效 */ }
+          for (var rootIndex = 0; rootIndex < record.insertedRoots.length; rootIndex++) {
+            try { if (record.insertedRoots[rootIndex].parentNode === parent) parent.removeChild(record.insertedRoots[rootIndex]) } catch (ignored) { /* 已移除 */ }
+          }
+          for (var restoreIndex = 0; restoreIndex < record.originals.length; restoreIndex++) {
+            try { parent.insertBefore(record.originals[restoreIndex], record.marker) } catch (ignored) { /* 位置已失效 */ }
+          }
+          try { parent.removeChild(record.marker) } catch (ignored) { /* 已移除 */ }
+          stats.restored += 1
         }
         records = []
       }
@@ -3295,7 +3450,8 @@ module.exports = purify_default;
       renderUserMarkdown: renderUserMarkdown,
       sanitizeHtml: sanitizeHtml,
       createPatcher: createPatcher,
-      collectHtmlTextNodes: collectHtmlTextNodes,
+      collectTextSegments: collectTextSegments,
+      isBalancedHtml: isBalancedHtml,
       hasWhitelistTag: hasWhitelistTag,
       isSafeHref: isSafeHref,
       isSafeImageSrc: isSafeImageSrc,
@@ -3373,8 +3529,11 @@ module.exports = purify_default;
        ChatNodeSeat 行 div（[data-chat-flow-kind]）→ slot 锚 [data-slot="conversation.chat.node"]
        （display:contents）→ AssistantNodeView/AssistantMarkdown 唯一根 div。
        该根 div 在流式（data-streaming）与历史中间 step 上同样存在，因此气泡不再依赖
-       「settled 才置位」的 [data-text-interaction-source]；后处理仍只看 settled。 ---- */
-    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"] > [data-slot="conversation.chat.node"] > div{box-sizing:border-box;align-self:flex-start;width:fit-content;max-width:min(calc(var(--dsh-chat-content-width,748px) * 0.86),100%);padding:12px 16px;border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-markdown-code-block);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}',
+       「settled 才置位」的 [data-text-interaction-source]；后处理仍只看 settled。
+       同时用 :has() 要求「body 里有非 hidden、非折叠包装、非空的可见正文」，
+       避免只有折叠思考/仅 tool-call 的 step 出现空气泡；reasoning 分区行也排除。
+       （不嵌套 :has：CSS 规范禁止 :has() 出现在 :has() 参数内，Chrome 会整条判定非法。） ---- */
+    'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"]:not([data-chat-group-part="reasoning"]) > [data-slot="conversation.chat.node"] > div:has(> div > *:not([hidden]):not([data-turn-process-inline]):not(:empty)){box-sizing:border-box;align-self:flex-start;width:fit-content;max-width:min(calc(var(--dsh-chat-content-width,748px) * 0.86),100%);padding:12px 16px;border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-markdown-code-block);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}',
     /* 宽表破栏依赖 100cqw 与内容列宽；气泡内改为气泡内滚动（判据 9），流式/落定都生效。 */
     'html[' + ROOT_ATTR + '="on"] [data-chat-flow-kind="assistant-step"] > [data-slot="conversation.chat.node"] > div .md-table-wide{width:100%!important;max-width:100%!important;overflow-x:auto!important;margin-left:0!important;padding-left:0!important}',
   ].join('\n')

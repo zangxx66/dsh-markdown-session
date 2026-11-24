@@ -327,6 +327,103 @@
       root.remove()
     })
 
+    await check('assistant/跨文本节点混合 HTML：details+summary+kbd+md 加粗', async function () {
+      // 复刻真机：上游把一段 raw HTML 拆成多个相邻 DOM 文本节点，
+      // 中间还隔着 md 渲染出的 <strong>；逐节点处理会产出空壳 details + 游离闭合标签。
+      var host = el('div')
+      var paragraph = el('p')
+      var strong = el('strong', null, '加粗')
+      var pieces = [
+        '…测试组：', '<details>', '<summary>', '标题文本', '</summary>',
+        '正文有 ', '<kbd>', 'Ctrl', '</kbd>+', '<kbd>', 'V', '</kbd> 与 ',
+      ]
+      for (var index = 0; index < pieces.length; index++) paragraph.appendChild(document.createTextNode(pieces[index]))
+      paragraph.appendChild(strong)
+      paragraph.appendChild(document.createTextNode('。'))
+      paragraph.appendChild(document.createTextNode('</details>'))
+      host.appendChild(paragraph)
+      document.body.appendChild(host)
+      var originalText = paragraph.textContent
+
+      var patcher = api.createPatcher({})
+      var replaced = patcher.scan(paragraph)
+      assertEqual(replaced, 1, '相邻文本段应合并为 1 次替换')
+      var details = paragraph.querySelector('details')
+      assert(details !== null, '未生成 details')
+      assertEqual(details.querySelector('summary').textContent, '标题文本', 'summary 文本不完整')
+      assert(details.contains(strong), 'md 加粗节点未保留在 details 内')
+      var innerText = paragraph.textContent
+      assertEqual(innerText.indexOf('</summary>'), -1, '残留 </summary> 文本')
+      assertEqual(innerText.indexOf('</details>'), -1, '残留 </details> 文本')
+      assertEqual(innerText.indexOf('</kbd>'), -1, '残留 </kbd> 文本')
+      assertEqual(details.open, false, 'details 默认不应展开')
+      details.querySelector('summary').click()
+      assertEqual(details.open, true, 'details 无法展开')
+      await wait(30)
+      assert(details.textContent.indexOf('正文有') >= 0, '展开后正文丢失')
+      assert(details.textContent.indexOf('加粗') >= 0, '展开后加粗文本丢失')
+
+      patcher.dispose()
+      assertEqual(paragraph.textContent, originalText, 'dispose 未逐字还原')
+      assertEqual(paragraph.querySelector('details'), null, 'dispose 后 details 残留')
+      assertEqual(strong.parentNode, paragraph, 'dispose 后 md 加粗节点未归位')
+      host.remove()
+    })
+
+    await check('assistant/跨文本节点拼接不得引入注入面', async function () {
+      var host = el('div')
+      var paragraph = el('p')
+      var pieces = [
+        '<details open ontoggle="window.__xss += 1">', '<summary>', '摘要', '</summary>',
+        '<img src=x onerror="window.__xss += 1">', '</details>',
+      ]
+      for (var index = 0; index < pieces.length; index++) paragraph.appendChild(document.createTextNode(pieces[index]))
+      host.appendChild(paragraph)
+      document.body.appendChild(host)
+      var patcher = api.createPatcher({})
+      patcher.scan(paragraph)
+      await wait(80)
+      assertEqual(window.__xss, 0, '跨节点拼接引入 XSS')
+      assert(paragraph.querySelector('details') !== null, 'details 未生成')
+      assertEqual(paragraph.querySelectorAll('img[onerror]').length, 0, 'onerror 残留')
+      assertEqual(paragraph.querySelectorAll('[ontoggle]').length, 0, 'ontoggle 残留')
+      patcher.dispose()
+      host.remove()
+    })
+
+    await check('assistant/HTML 跨到受保护元素时整段放弃（保持字面，不产出半截结构）', function () {
+      var host = el('div')
+      var paragraph = el('p')
+      paragraph.appendChild(document.createTextNode('<details><summary>标题</summary>'))
+      var code = el('pre')
+      code.textContent = '<b>代码块</b>'
+      paragraph.appendChild(code)
+      paragraph.appendChild(document.createTextNode('</details>'))
+      host.appendChild(paragraph)
+      document.body.appendChild(host)
+      var original = paragraph.textContent
+      var patcher = api.createPatcher({})
+      assertEqual(patcher.scan(paragraph), 0, '受保护元素应阻断拼接')
+      assertEqual(paragraph.querySelector('details'), null, '不应产出半截 details')
+      assertEqual(paragraph.textContent, original, '放弃时必须保持字面原文')
+      patcher.dispose()
+      host.remove()
+    })
+
+    await check('assistant/无 sanitizer 时失败关闭（不插入任何 HTML）', function () {
+      var host = el('div')
+      var paragraph = el('p')
+      paragraph.textContent = '危险 <b>不应渲染</b>'
+      host.appendChild(paragraph)
+      document.body.appendChild(host)
+      var patcher = api.createPatcher({ sanitize: function () { return '' } })
+      assertEqual(patcher.scan(paragraph), 0, '无 sanitizer 仍尝试替换')
+      assertEqual(paragraph.querySelector('b'), null, '无 sanitizer 时插入了 HTML')
+      assertEqual(paragraph.textContent, '危险 <b>不应渲染</b>', '原文被改动')
+      patcher.dispose()
+      host.remove()
+    })
+
     /* ---- 4. 表格装饰（组件 effect 的纯函数入口） ---- */
     await check('user-markdown/表格包装为可滚动 region', function () {
       var container = el('div', { 'data-dsh-md': 'user' })
@@ -352,22 +449,52 @@
      *           > 思考块 / 隐藏过程
      */
     function buildAssistantRow(options) {
+      var opts = options || {}
       var flow = el('div', { 'data-chat-flow-kind': 'assistant-step' })
+      if (opts.groupPart) flow.setAttribute('data-chat-group-part', opts.groupPart)
       var anchor = el('div', { 'data-slot': 'conversation.chat.node' })
       var root = el('div', { class: 'assist-root' })
-      if (options.streaming) root.setAttribute('data-streaming', '')
+      if (opts.streaming) root.setAttribute('data-streaming', '')
       var body = el('div', { class: 'assist-body' })
       var markdown = el('div', { class: 'markdown' })
-      if (options.textInteractionSource) markdown.setAttribute('data-text-interaction-source', '')
-      if (options.markdown) markdown.innerHTML = api.renderUserMarkdown(options.markdown)
-      if (options.literalHtml) {
-        var paragraph = el('p', null, options.literalHtml)
+      var render = { flow: flow, anchor: anchor, root: root, body: body, markdown: markdown }
+      if (opts.reasoningOnly) {
+        // 真实结构：body > 思考 wrapper（隐藏时带 data-turn-process-inline + hidden）> ReasoningRow[data-variant="think"]
+        var wrapper = el('div', {})
+        if (opts.hidden) {
+          wrapper.setAttribute('data-turn-process-inline', '')
+          wrapper.setAttribute('hidden', '')
+        }
+        var inner = el('div', { 'data-variant': 'think', class: 'fake-think' })
+        inner.textContent = '思考中…（无可见正文）'
+        wrapper.appendChild(inner)
+        body.appendChild(wrapper)
+        render.reasoningWrapper = wrapper
+        render.think = inner
+        root.appendChild(body)
+        anchor.appendChild(root)
+        flow.appendChild(anchor)
+        return render
+      }
+      if (opts.empty) {
+        // 只有 tool-call 的 streaming step：tool-call 被分组到独立行，正文为空
+        root.appendChild(body)
+        anchor.appendChild(root)
+        flow.appendChild(anchor)
+        return render
+      }
+      if (opts.textInteractionSource) markdown.setAttribute('data-text-interaction-source', '')
+      if (opts.markdown) markdown.innerHTML = api.renderUserMarkdown(opts.markdown)
+      if (opts.literalHtml) {
+        var paragraph = el('p', null, opts.literalHtml)
         markdown.appendChild(paragraph)
       }
       body.appendChild(markdown)
+      var reasoning = el('div', {})
       var think = el('div', { 'data-variant': 'think', class: 'fake-think' })
       think.textContent = '思考块 <b>不应解析</b>'
-      body.appendChild(think)
+      reasoning.appendChild(think)
+      body.appendChild(reasoning)
       var hidden = el('div', { 'data-turn-process-inline': '' })
       hidden.setAttribute('hidden', '')
       hidden.textContent = '隐藏的折叠过程'
@@ -375,7 +502,10 @@
       root.appendChild(body)
       anchor.appendChild(root)
       flow.appendChild(anchor)
-      return { flow: flow, anchor: anchor, root: root, body: body, markdown: markdown, think: think, hidden: hidden }
+      render.think = think
+      render.reasoningWrapper = reasoning
+      render.hidden = hidden
+      return render
     }
 
     var settled = buildAssistantRow({
@@ -403,6 +533,10 @@
       literalHtml: '流式字面 <b>暂不处理</b>',
     })
 
+    var reasoningHiddenRow = buildAssistantRow({ reasoningOnly: true, hidden: true })
+    var emptyStreamingRow = buildAssistantRow({ streaming: true, empty: true })
+    var groupReasoningRow = buildAssistantRow({ textInteractionSource: true, markdown: '分区正文 **不应有气泡**', groupPart: 'reasoning' })
+
     var userFlow = el('div', { 'data-chat-flow-kind': 'user' })
     var userColumn = el('div')
     var bubble = el('div', { 'data-message-bubble': '' })
@@ -417,7 +551,10 @@
     var thinkFlow = el('div', { 'data-variant': 'think' })
     thinkFlow.textContent = '独立思考行'
 
-    stage.append(userFlow, settled.flow, streaming.flow, toolFlow, thinkFlow)
+    stage.append(
+      userFlow, settled.flow, streaming.flow, toolFlow, thinkFlow,
+      reasoningHiddenRow.flow, emptyStreamingRow.flow, groupReasoningRow.flow,
+    )
 
     var button = toolFlow.querySelector('button')
     var clicks = 0
@@ -467,6 +604,22 @@
       // 流式期间后处理必须不动：字面 HTML 仍是文本
       assertEqual(streaming.markdown.querySelector('b'), null, '流式消息被后处理（错误）')
       assert(streaming.markdown.textContent.indexOf('<b>暂不处理</b>') >= 0, '流式字面 HTML 文本被改')
+    })
+
+    await check('气泡/无可见正文不出空气泡（reasoning-only / 组分区 reasoning / 空流式）', function () {
+      var cases = [
+        ['reasoning-hidden', reasoningHiddenRow.root],
+        ['empty-streaming', emptyStreamingRow.root],
+        ['group-part-reasoning', groupReasoningRow.root],
+      ]
+      for (var index = 0; index < cases.length; index++) {
+        var style = window.getComputedStyle(cases[index][1])
+        var background = colorOf(style.backgroundColor)
+        assert(background === null || background.a === 0, cases[index][0] + ' 出现空气泡背景')
+        assertEqual(parseFloat(style.borderRadius), 0, cases[index][0] + ' 出现气泡圆角')
+        assertEqual(parseFloat(style.paddingLeft), 0, cases[index][0] + ' 出现气泡内边距')
+      }
+      // 对照组：同一结构里只要有可见 MarkdownText 正文就必须有气泡（已在流式/落定断言里覆盖）。
     })
 
     await check('气泡/落定态：外壳在消息根而不是 Markdown 根', function () {
