@@ -86,14 +86,15 @@ npm test        # 构建 + node:test（单元 + 真浏览器 E2E）
 ```
 
 - `test/unit.test.mjs`：GFM 结构、管线顺序、白名单配置、URL 策略、apply/dispose、组件输出、bundle 形态。
-- `test/browser.test.mjs`：无头 Chrome（`DSH_CHROME_PATH` 可覆盖路径；找不到时跳过）加载 `test/fixtures/harness.html`，验证 30+ XSS payload 零执行、**跨文本节点混合 HTML（details+summary+kbd+md 加粗）**替换与逐字还原、**流式态/落定态两种气泡**、**折叠思考/空 body 不出可见气泡但几何恒定**、**可见 reasoning 已显形**、**布局稳定化（无内容→有正文时 padding/border 不变、高度增量仅来自内容）**、气泡对比度（WCAG ≥4.5）、宽表滚动、行容器布局不被注入、工具卡/按钮负向回归，并生成浅/深色视觉截图。
+- `test/browser.test.mjs`：无头 Chrome（`DSH_CHROME_PATH` 可覆盖路径；找不到时跳过）加载 `test/fixtures/harness.html`，验证 32 条 XSS payload 零执行、**跨文本节点混合 HTML（details+summary+kbd+md 加粗）**替换与逐字还原、**流式态/落定态两种气泡**、**折叠思考/空 body 不出可见气泡但几何恒定**、**可见 reasoning 已显形**、**布局稳定化（无内容→有正文时 padding/border 不变、高度增量仅来自内容）**、气泡对比度（WCAG ≥4.5）、宽表滚动、行容器布局不被注入、工具卡/按钮负向回归，并生成浅/深色视觉截图。
 - `node scripts/build.mjs`：把 `vendor/marked.umd.cjs`、`vendor/purify.cjs.js` 与 `lib/markdown-session.cjs` 内联成 classic script `client.js`（浏览器官网只共享 11 个静态模块，loader 不解析 bare 包；只有 `react` 走宿主静态表）。
 
 ### 已知限制
 
 - 助手侧 HTML 是**后处理**：流式期间仍显示字面文本，落定后替换。跨文本节点合并已覆盖 details/kbd/加粗混排；但若 HTML 块跨到受保护元素（代码块/思考块/KaTeX）或无法在父节点内闭合，整段保持字面显示。
 - 极端情况下 React 重新渲染 settled 消息会覆盖后处理结果，下一个观察周期会重新处理。
-- 本 attempt 的执行环境无法把插件安装进 `~/.dsh/profiles/web`（沙箱只允许写工作区），因此**真机 GUI 安装后的最终目视验证由 supervisor 在合并后执行**；仓库内已用无头 Chrome 做真 DOM 验证。
+- 空内容 / 折叠思考 / 仅 tool-call 的 step 保留 26px 透明恒定几何（无可见气泡，但占位）；这是「布局不突变」的代价，用来换掉流式跟随失效。
+- 真机验收已完成（0.1.0）：用户侧 Markdown/HTML、助手侧跨节点 HTML、XSS 不弹窗、禁用可逆，以及「后台任务 + 多轮交错 + 长回复」下的流式跟随，均在真实 DSH Web GUI 上目视确认。
 
 ## 第三方
 

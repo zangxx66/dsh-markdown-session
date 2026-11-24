@@ -24,17 +24,25 @@ Renders DSH conversation messages as chat-app bubbles: both user-sent and assist
 - **可逆卸载**：禁用插件后移除样式、根属性、MutationObserver，并把已替换的 HTML 还原成字面文本。
 
 - 详细说明 / Full docs：[`plugins/dsh-markdown-session/README.md`](plugins/dsh-markdown-session/README.md)
-- 版本：`0.1.0`（当前仅在本地 web profile 使用，尚未发布 npm）
+- npm：[dsh-markdown-session](https://www.npmjs.com/package/dsh-markdown-session) · 最新版本 `0.1.0`（已发布，含流式跟随修复）
 
 ### 安装 / Install
 
-在 DSH 会话里 / inside a DSH session：
+在 DSH 会话里 / inside a DSH session（从 npm 安装）：
 
 ```
-plugin_manager action=install_bundle target=<绝对路径>/plugins/dsh-markdown-session
+plugin_manager action=install_bundle target=dsh-markdown-session
 ```
 
 或用 CLI 装包：
+
+```bash
+dsh plugin --profile web add dsh-markdown-session
+```
+
+CLI 只把包装进 profile，之后需在「设置 → 插件」里启用，再刷新页面。
+
+本地开发（改代码即时生效）走 link 方式：
 
 ```bash
 dsh plugin --profile web add link:/absolute/path/to/plugins/dsh-markdown-session
@@ -56,7 +64,7 @@ npm test        # 构建 + node:test（单元 + 无头 Chrome E2E）
 
 ## 目标看板
 
-本工作区用 dsh-graph 管理目标与版本，数据在 `.dsh-graph/`（不入 git）。当前版本 `v0.1.0` 下包含已交付目标 `g-001`。
+本工作区用 dsh-graph 管理目标与版本，数据在 `.dsh-graph/`（不入 git）。当前版本 `v0.1.0` 下有两个已交付目标：`g-001`（初版渲染/气泡/XSS 能力）与 `g-002`（修复流式输出时视图卡在上一条、不跟随的严重 bug）。
 
 ## 许可证 / License
 
