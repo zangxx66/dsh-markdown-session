@@ -8,10 +8,10 @@ DSH Web GUI 的会话 Markdown 渲染插件（客户端增强，单包双半边�
 - **聊天气泡**：用户右对齐（沿用上游 `.userRow` 结构）、助手左对齐；气泡锚在消息根，**流式与历史中间 step 同样有气泡**（不依赖 settled 才有的属性）；浅/深色都使用 DSH 主题变量。
 - **可逆卸载**：禁用插件后移除样式、根属性、MutationObserver，并把已替换的 HTML 还原成字面文本。
 
-![浅色](test/artifacts/bubbles-light.png)
-![深色](test/artifacts/bubbles-dark.png)
+![浅色](https://raw.githubusercontent.com/zangxx66/dsh-markdown-session/master/plugins/dsh-markdown-session/test/artifacts/bubbles-light.png)
+![深色](https://raw.githubusercontent.com/zangxx66/dsh-markdown-session/master/plugins/dsh-markdown-session/test/artifacts/bubbles-dark.png)
 
-> 截图来自 `test/fixtures/visual.html` 的**视觉 fixture**：真浏览器渲染，但主题变量是 DSH `ui-theme` 的近似值，用于展示布局与可读性，不是真机像素级截图。
+> 截图来自 `test/fixtures/visual.html` 的**视觉 fixture**：真浏览器渲染，但主题变量是 DSH `ui-theme` 的近似值，用于展示布局与可读性，不是真机像素级截图。截图不随 npm 包发布（`files` 已排除 `test/`），此处走仓库 raw 链接。
 
 ## 安装
 
